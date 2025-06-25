@@ -1,12 +1,11 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "slack-kb-agent"
-version = "0.1.0"
-readme = "README.md"
-requires-python = ">=3.10"
+name = "slack_kb_agent"
+version = "0.0.1"
+requires-python = ">=3.8"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
