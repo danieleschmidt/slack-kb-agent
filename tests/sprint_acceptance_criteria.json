@@ -1,10 +1,34 @@
 {
-  "establish-a-testing-framework-(`pytest`,-etc.)-with-initial-tests.": {
-    "test_file": "tests/test_foundational.py",
-    "description": "Verifies that Establish a testing framework (`pytest`, etc.) with initial tests.",
+  "define-team-member-model": {
+    "test_file": "tests/test_smart_routing.py",
+    "description": "Define TeamMember dataclass and loader function",
     "cases": {
-      "success": "Asserts the primary success case.",
-      "edge_case_null_input": "Asserts that providing null input is handled gracefully."
+      "success": "Loading a valid profiles file returns TeamMember objects",
+      "invalid_path": "Invalid profile path handled gracefully"
+    }
+  },
+  "implement-routing-engine": {
+    "test_file": "tests/test_smart_routing.py",
+    "description": "RoutingEngine maps queries to experts",
+    "cases": {
+      "match_found": "Query with known topic returns members",
+      "no_match": "Unknown topic yields empty list"
+    }
+  },
+  "integrate-routing-with-query-processor": {
+    "test_file": "tests/test_smart_routing.py",
+    "description": "QueryProcessor escalates when search fails",
+    "cases": {
+      "escalate_on_no_results": "No documents triggers routing",
+      "escalation_disabled": "Disabled escalation returns none"
+    }
+  },
+  "notify-and-log-escalations": {
+    "test_file": "tests/test_smart_routing.py",
+    "description": "Slack notification sent and event logged",
+    "cases": {
+      "slack_message_sent": "Slack API called with member ID and text",
+      "api_failure": "Slack API errors are caught and logged"
     }
   }
 }

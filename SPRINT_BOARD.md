@@ -1,6 +1,6 @@
 # Sprint Board
 
-## Backlog
+_No active sprint._
+
 | Task | Owner | Priority | Status |
 | --- | --- | --- | --- |
-| Establish a testing framework (`pytest`, etc.) with initial tests. | @agent | P0 | Done |
