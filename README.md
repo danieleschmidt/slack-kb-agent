@@ -1,5 +1,7 @@
 # Slack-KB-Agent
 
+Current version: 1.2.0
+
 Intelligent Slack bot that answers team questions by indexing and searching across documentation, GitHub issues, code comments, and conversation history.
 
 ## Features
@@ -8,7 +10,11 @@ Intelligent Slack bot that answers team questions by indexing and searching acro
 - **Contextual Q&A**: Understands team-specific terminology and project context
 - **Real-time Learning**: Continuously updates knowledge base from ongoing conversations
 - **Smart Routing**: Escalates complex questions to appropriate team members
-- **Usage Analytics**: Tracks common questions and knowledge gaps
+- **Usage Analytics**: Tracks common questions, knowledge gaps, active users, and active channels
+  (powered by the `UsageAnalytics` module integrated with the `QueryProcessor`)
+- **Analytics Persistence**: Save and load usage statistics from JSON files
+- **Knowledge Base Persistence**: Save and load indexed documents from JSON files
+- **Command Line Interface**: Query the knowledge base using the `slack-kb-agent` CLI
 - **Permission-Aware**: Respects access controls and sensitive information boundaries
 
 ## Quick Setup
@@ -67,6 +73,12 @@ docker-compose up -d
 - `/kb add <url>` - Add documentation URL to index
 - `/kb stats` - Show usage statistics
 - `/kb feedback <rating>` - Rate last response
+- See [API_USAGE_GUIDE.md](API_USAGE_GUIDE.md) for programmatic examples
+
+### CLI
+```bash
+$ slack-kb-agent "deployment process" --kb kb.json
+```
 
 ## Configuration
 

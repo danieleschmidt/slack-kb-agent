@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from .analytics import UsageAnalytics
+
 from .knowledge_base import KnowledgeBase
 from .models import Document
 from .smart_routing import RoutingEngine, TeamMember
@@ -21,7 +23,7 @@ class Query:
 
 
 class QueryProcessor:
-    """Handle search queries with team-specific context and escalation."""
+    """Handle search queries with context, escalation, and analytics."""
 
     def __init__(
         self,
@@ -30,7 +32,9 @@ class QueryProcessor:
         *,
         routing: Optional["RoutingEngine"] = None,
         enable_escalation: bool = True,
+        analytics: Optional[UsageAnalytics] = None,
     ) -> None:
+        """Create a processor with optional routing and analytics."""
         self.kb = kb
         # terminology maps slang or abbreviations to canonical terms
         self.terminology = {
@@ -38,6 +42,7 @@ class QueryProcessor:
         }
         self.routing = routing
         self.enable_escalation = enable_escalation
+        self.analytics = analytics
 
     def normalize(self, text: str) -> str:
         """Expand known terminology and return a normalized query string."""
@@ -51,9 +56,15 @@ class QueryProcessor:
         """Return documents matching the normalized query."""
         if isinstance(query, Query):
             text = query.text
+            user = query.user
+            channel = query.channel
         else:
             text = query
+            user = None
+            channel = None
         normalized = self.normalize(text)
+        if self.analytics is not None:
+            self.analytics.record_query(normalized, user=user, channel=channel)
         return self.kb.search(normalized)
 
     def search_and_route(
