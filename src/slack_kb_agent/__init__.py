@@ -14,6 +14,14 @@ from .sources import (
 from .knowledge_base import KnowledgeBase
 from .vector_search import VectorSearchEngine, is_vector_search_available
 from .slack_bot import SlackBotServer, create_bot_from_env, is_slack_bot_available
+from .ingestion import (
+    FileIngester,
+    GitHubIngester, 
+    WebDocumentationCrawler,
+    SlackHistoryIngester,
+    ContentProcessor,
+    BatchIngester
+)
 from .query_processor import Query, QueryProcessor
 from .real_time import RealTimeUpdater
 from .smart_routing import RoutingEngine, TeamMember, load_team_profiles
@@ -35,6 +43,12 @@ __all__ = [
     "SlackBotServer",
     "create_bot_from_env",
     "is_slack_bot_available",
+    "FileIngester",
+    "GitHubIngester",
+    "WebDocumentationCrawler",
+    "SlackHistoryIngester",
+    "ContentProcessor",
+    "BatchIngester",
     "Query",
     "QueryProcessor",
     "RealTimeUpdater",
