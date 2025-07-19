@@ -7,6 +7,11 @@ Intelligent Slack bot that answers team questions by indexing and searching acro
 ## Features
 
 - **Multi-Source Knowledge Base**: Indexes docs, GitHub issues, code repositories, and Slack history
+- **Vector-Based Semantic Search**: Advanced similarity search using sentence transformers and FAISS
+  - Understands intent beyond exact keyword matches
+  - Configurable similarity thresholds  
+  - Hybrid search combining semantic and keyword approaches
+  - Automatic fallback to keyword search when vector dependencies unavailable
 - **Contextual Q&A**: Understands team-specific terminology and project context
 - **Real-time Learning**: Continuously updates knowledge base from ongoing conversations
 - **Smart Routing**: Escalates complex questions to appropriate team members
@@ -22,9 +27,10 @@ Intelligent Slack bot that answers team questions by indexing and searching acro
 ### 1. Slack App Configuration
 ```bash
 # Install dependencies
-npm install
-# or
-pip install -r requirements.txt
+pip install -e .
+
+# For vector search capabilities (optional)
+pip install sentence-transformers faiss-cpu torch
 
 # Set up Slack app credentials
 cp .env.example .env
@@ -181,6 +187,31 @@ class QueryProcessor:
         entities = self.extract_entities(message)
         context = self.get_conversation_context(message)
         return self.route_query(intent, entities, context)
+```
+
+### Vector-Based Semantic Search
+```python
+from slack_kb_agent import KnowledgeBase, Document
+
+# Create knowledge base with vector search enabled
+kb = KnowledgeBase(
+    enable_vector_search=True,
+    vector_model="all-MiniLM-L6-v2",  # Sentence transformer model
+    similarity_threshold=0.5          # Minimum similarity score
+)
+
+# Add documents
+kb.add_document(Document(content="Python programming tutorial", source="docs"))
+kb.add_document(Document(content="Machine learning with PyTorch", source="docs"))
+
+# Semantic search - finds related content beyond exact keywords
+results = kb.search_semantic("coding in Python", threshold=0.7)
+
+# Hybrid search - combines semantic and keyword matching
+results = kb.search_hybrid("Python development", vector_weight=0.7, keyword_weight=0.3)
+
+# Traditional keyword search still available
+results = kb.search("Python")
 ```
 
 ### Contextual Responses
