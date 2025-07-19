@@ -67,15 +67,20 @@ The bot will connect to Slack and respond to:
 
 ### 5. Knowledge Source Integration
 ```bash
-# Index GitHub repositories
-python ingest.py --source github --repos "org/repo1,org/repo2"
+# Index local files and documentation
+python ingest.py --source files --path ./docs --recursive
 
-# Index documentation sites
-python ingest.py --source docs --urls "https://docs.example.com"
+# Index GitHub repositories  
+python ingest.py --source github --repo "owner/repo" --token $GITHUB_TOKEN
 
-# Index Slack history (with permissions)
-python ingest.py --source slack --channels "general,dev-team"
+# Index web documentation sites
+python ingest.py --source web --url "https://docs.example.com"
+
+# Index Slack conversation history
+python ingest.py --source slack --channel "general" --token $SLACK_BOT_TOKEN --days 30
 ```
+
+The ingested content is automatically available to the bot on next restart.
 
 ### 6. Production Deployment
 ```bash
@@ -200,6 +205,39 @@ Slack Events → Message Processor → Query Understanding → Knowledge Retriev
 - **Thread Context**: Maintain conversation context and replies
 - **File Attachments**: Index shared documents and images (OCR)
 - **Reaction Analysis**: Identify helpful responses based on reactions
+
+## Knowledge Ingestion System
+
+The ingestion system automatically processes and filters content from multiple sources:
+
+### Automatic Content Processing
+```python
+from slack_kb_agent import FileIngester, GitHubIngester, WebDocumentationCrawler
+
+# File-based ingestion with automatic format detection
+ingester = FileIngester()
+documents = ingester.ingest_directory("./docs", recursive=True)
+
+# GitHub integration with issues and README
+github = GitHubIngester(token="your-token")
+documents = github.ingest_repository("owner/repo", include_issues=True)
+
+# Web documentation crawling
+crawler = WebDocumentationCrawler()
+documents = crawler.crawl_url("https://docs.example.com", max_depth=2)
+```
+
+### Security Features
+- **Sensitive Data Detection**: Automatically detects and redacts API keys, passwords, tokens
+- **Content Filtering**: Removes low-value content and excessive whitespace
+- **Incremental Updates**: Avoids duplicate ingestion with checksum tracking
+
+### Supported Formats
+- **Text Files**: `.txt`, `.md`, `.rst` with automatic markdown processing
+- **Code Files**: `.py`, `.js`, `.ts`, `.json`, `.yaml` with syntax preservation  
+- **Web Content**: HTML with automatic content extraction and link following
+- **GitHub**: Issues, pull requests, README files, and repository metadata
+- **Slack**: Message history with user attribution and threading context
 
 ## Advanced Features
 
