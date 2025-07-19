@@ -31,7 +31,10 @@ from slack_kb_agent import (
     create_bot_from_env, 
     is_slack_bot_available,
     KnowledgeBase,
-    UsageAnalytics
+    UsageAnalytics,
+    setup_monitoring,
+    MonitoredKnowledgeBase,
+    get_global_metrics
 )
 
 
@@ -48,8 +51,8 @@ def setup_logging():
     )
 
 
-def load_knowledge_base() -> KnowledgeBase:
-    """Load knowledge base from file or create empty one."""
+def load_knowledge_base() -> MonitoredKnowledgeBase:
+    """Load knowledge base from file or create empty one with monitoring."""
     kb_path = Path(os.getenv("KB_DATA_PATH", "kb.json"))
     
     if kb_path.exists():
@@ -60,7 +63,14 @@ def load_knowledge_base() -> KnowledgeBase:
         print(f"Creating new knowledge base (file not found: {kb_path})")
         kb = KnowledgeBase()
     
-    return kb
+    # Wrap with monitoring
+    metrics = get_global_metrics()
+    monitored_kb = MonitoredKnowledgeBase(kb, metrics)
+    
+    # Set initial metrics
+    metrics.set_gauge("kb_total_documents", len(kb.documents))
+    
+    return monitored_kb
 
 
 def load_analytics() -> UsageAnalytics:
@@ -104,6 +114,11 @@ def main():
     print("🤖 Slack Knowledge Base Bot")
     print("=" * 40)
     
+    # Set up monitoring first
+    monitoring = setup_monitoring()
+    if monitoring["status"] == "enabled":
+        print("📊 Monitoring system enabled")
+    
     setup_logging()
     logger = logging.getLogger(__name__)
     
@@ -128,9 +143,10 @@ def main():
         bot.analytics = analytics
         
         print("✅ Bot server configured successfully")
-        print(f"📚 Knowledge base: {len(kb.documents)} documents")
-        print(f"📊 Vector search: {'enabled' if kb.enable_vector_search else 'disabled'}")
+        print(f"📚 Knowledge base: {len(kb.kb.documents)} documents")
+        print(f"📊 Vector search: {'enabled' if kb.kb.enable_vector_search else 'disabled'}")
         print(f"📈 Analytics: {analytics.total_queries} total queries")
+        print(f"🔍 Monitoring: {'enabled' if monitoring['status'] == 'enabled' else 'disabled'}")
         print("\n🚀 Starting bot server...")
         
         # Start the bot

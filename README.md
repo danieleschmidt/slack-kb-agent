@@ -84,10 +84,32 @@ The ingested content is automatically available to the bot on next restart.
 
 ### 6. Production Deployment
 ```bash
+# Start the bot server
+python bot.py
+
+# Start monitoring server (separate process)
+python monitoring_server.py
+
 # For production, use process managers like systemd, supervisor, or Docker
 # Docker example:
 docker-compose up -d
 ```
+
+### 7. Monitoring & Observability
+The system includes comprehensive monitoring for production deployments:
+
+```bash
+# Access monitoring endpoints
+curl http://localhost:9090/health     # Health check
+curl http://localhost:9090/metrics    # Prometheus metrics  
+curl http://localhost:9090/status     # Service status
+```
+
+Available metrics:
+- **Request metrics**: `slack_messages_received`, `slack_responses_sent`
+- **Performance**: `query_duration_seconds`, `search_response_time`
+- **Knowledge base**: `kb_total_documents`, `kb_search_queries`
+- **System health**: Memory usage, disk space, service status
 
 ## Usage
 

@@ -22,6 +22,16 @@ from .ingestion import (
     ContentProcessor,
     BatchIngester
 )
+from .monitoring import (
+    MetricsCollector,
+    HealthChecker,
+    PerformanceTracker,
+    StructuredLogger,
+    MonitoredKnowledgeBase,
+    MonitoringConfig,
+    setup_monitoring,
+    get_global_metrics
+)
 from .query_processor import Query, QueryProcessor
 from .real_time import RealTimeUpdater
 from .smart_routing import RoutingEngine, TeamMember, load_team_profiles
@@ -49,6 +59,14 @@ __all__ = [
     "SlackHistoryIngester",
     "ContentProcessor",
     "BatchIngester",
+    "MetricsCollector",
+    "HealthChecker",
+    "PerformanceTracker",
+    "StructuredLogger",
+    "MonitoredKnowledgeBase",
+    "MonitoringConfig",
+    "setup_monitoring",
+    "get_global_metrics",
     "Query",
     "QueryProcessor",
     "RealTimeUpdater",
