@@ -24,20 +24,48 @@ Intelligent Slack bot that answers team questions by indexing and searching acro
 
 ## Quick Setup
 
-### 1. Slack App Configuration
+### 1. Install Dependencies
 ```bash
-# Install dependencies
+# Install core dependencies
 pip install -e .
 
-# For vector search capabilities (optional)
-pip install sentence-transformers faiss-cpu torch
-
-# Set up Slack app credentials
-cp .env.example .env
-# Edit .env with your Slack tokens
+# For full functionality, install optional dependencies
+pip install sentence-transformers faiss-cpu torch slack-bolt slack-sdk
 ```
 
-### 2. Knowledge Source Integration
+### 2. Create Slack App
+1. Go to [Slack API](https://api.slack.com/apps) and create a new app
+2. Enable Socket Mode in your app settings
+3. Add the following OAuth scopes under "OAuth & Permissions":
+   - `chat:write` - Send messages
+   - `app_mentions:read` - Receive @mentions
+   - `im:read` - Read direct messages
+   - `channels:read` - Access channel information
+4. Install the app to your workspace
+
+### 3. Configure Environment
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Edit .env with your Slack credentials:
+# - SLACK_BOT_TOKEN (from OAuth & Permissions)
+# - SLACK_APP_TOKEN (from Basic Information > App-Level Tokens)
+# - SLACK_SIGNING_SECRET (from Basic Information)
+```
+
+### 4. Start the Bot
+```bash
+# Start the Slack bot server
+python bot.py
+```
+
+The bot will connect to Slack and respond to:
+- **@mentions**: `@kb-agent How do I deploy the application?`
+- **Direct messages**: Send a DM with your question
+- **Slash commands**: `/kb search query` or `/kb help`
+
+### 5. Knowledge Source Integration
 ```bash
 # Index GitHub repositories
 python ingest.py --source github --repos "org/repo1,org/repo2"
@@ -49,12 +77,10 @@ python ingest.py --source docs --urls "https://docs.example.com"
 python ingest.py --source slack --channels "general,dev-team"
 ```
 
-### 3. Deploy Bot
+### 6. Production Deployment
 ```bash
-# Start the bot
-python bot.py
-
-# Or use Docker
+# For production, use process managers like systemd, supervisor, or Docker
+# Docker example:
 docker-compose up -d
 ```
 
@@ -69,16 +95,15 @@ docker-compose up -d
 
 ### Direct Messages
 ```
-/kb search deployment process
-/kb recent updates on project alpha
-/kb who worked on the billing module last?
+How do I deploy the application?
+What are the authentication options?
+Show me the troubleshooting guide
 ```
 
 ### Slash Commands
-- `/kb search <query>` - Search knowledge base
-- `/kb add <url>` - Add documentation URL to index
-- `/kb stats` - Show usage statistics
-- `/kb feedback <rating>` - Rate last response
+- `/kb <query>` - Search knowledge base: `/kb deployment process`
+- `/kb help` - Show help and usage instructions
+- `/kb stats` - Show usage statistics and analytics
 - See [API_USAGE_GUIDE.md](API_USAGE_GUIDE.md) for programmatic examples
 
 ### CLI
