@@ -4,7 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slack_kb_agent"
-version = "1.2.0"
+version = "1.3.0"
+dependencies = [
+    "sentence-transformers>=2.2.0",
+    "faiss-cpu>=1.7.0",
+    "numpy>=1.21.0",
+    "torch>=1.9.0",
+]
 
 [project.scripts]
 slack-kb-agent = "slack_kb_agent.cli:main"

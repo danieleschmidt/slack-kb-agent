@@ -1,6 +1,6 @@
 """Slack Knowledge Base Agent package."""
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 from .utils import add
 from .models import Document
@@ -12,6 +12,7 @@ from .sources import (
     SlackHistorySource,
 )
 from .knowledge_base import KnowledgeBase
+from .vector_search import VectorSearchEngine, is_vector_search_available
 from .query_processor import Query, QueryProcessor
 from .real_time import RealTimeUpdater
 from .smart_routing import RoutingEngine, TeamMember, load_team_profiles
@@ -28,6 +29,8 @@ __all__ = [
     "CodeRepositorySource",
     "SlackHistorySource",
     "KnowledgeBase",
+    "VectorSearchEngine",
+    "is_vector_search_available",
     "Query",
     "QueryProcessor",
     "RealTimeUpdater",

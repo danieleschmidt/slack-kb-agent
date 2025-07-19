@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.3.0 - 2025-07-19
+
+- feat(search): implement vector-based semantic search with FAISS
+- feat(search): add hybrid search combining semantic and keyword approaches
+- feat(search): configurable similarity thresholds and model selection
+- feat(search): automatic fallback to keyword search when dependencies unavailable
+- docs: comprehensive vector search API documentation and examples
+- tests: extensive test coverage with mocked dependencies
+- chore: add WSJF-prioritized development backlog
+
 ## v1.2.0 - 2025-06-27
 
 - feat(cli): add command line interface for querying the knowledge base
