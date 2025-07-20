@@ -1,6 +1,6 @@
 """Slack Knowledge Base Agent package."""
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
 from .utils import add
 from .models import Document
@@ -40,6 +40,7 @@ from .analytics import UsageAnalytics
 from .auth import AuthConfig, AuthMiddleware, get_auth_middleware
 from .validation import InputValidator, ValidationConfig, sanitize_query, validate_slack_input
 from .rate_limiting import RateLimiter, RateLimitConfig, UserRateLimiter, get_rate_limiter, get_user_rate_limiter
+from .llm import LLMConfig, ResponseGenerator, LLMResponse, get_response_generator
 from . import cli
 
 __all__ = [
@@ -90,5 +91,9 @@ __all__ = [
     "UserRateLimiter",
     "get_rate_limiter",
     "get_user_rate_limiter",
+    "LLMConfig",
+    "ResponseGenerator",
+    "LLMResponse",
+    "get_response_generator",
     "cli",
 ]

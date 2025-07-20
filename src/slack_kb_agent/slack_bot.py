@@ -13,6 +13,7 @@ from .analytics import UsageAnalytics
 from .query_processor import QueryProcessor
 from .validation import validate_slack_input, sanitize_query, get_validator
 from .rate_limiting import get_user_rate_limiter, RateLimitResult
+from .llm import get_response_generator, LLMResponse
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +159,7 @@ class SlackBotServer:
                 
                 # Process search query
                 results = self.process_query(sanitized_query, user_id, channel_id)
-                response = self.format_response(results, sanitized_query)
+                response = self.format_response(results, sanitized_query, user_id)
                 say(response)
                 
             except Exception as e:
@@ -212,7 +213,7 @@ class SlackBotServer:
         
         # Process the sanitized query
         results = self.process_query(sanitized_query, user_id, channel_id)
-        response = self.format_response(results, sanitized_query)
+        response = self.format_response(results, sanitized_query, user_id)
         say(response)
     
     def process_query(
@@ -256,29 +257,65 @@ class SlackBotServer:
                 logger.error(f"Fallback search also failed: {fallback_error}")
                 return []
     
-    def format_response(self, documents: List[Document], query: str) -> Dict[str, Any]:
-        """Format search results for Slack response.
+    def format_response(self, documents: List[Document], query: str, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """Format search results for Slack response with optional LLM enhancement.
         
         Args:
             documents: List of relevant documents
             query: Original search query
+            user_id: User ID for LLM personalization
             
         Returns:
             Slack response payload
         """
-        if not documents:
-            return {
-                "text": f"🔍 No results found for '{query}'. Try rephrasing your question or check the available documentation.",
-                "response_type": "ephemeral"
-            }
-        
         if not query.strip():
             return {
                 "text": self._get_help_text(),
                 "response_type": "ephemeral"
             }
         
-        # Build response with formatted results
+        # Try to generate intelligent response using LLM
+        response_generator = get_response_generator()
+        if response_generator.is_available() and documents:
+            try:
+                llm_response = response_generator.generate_response(
+                    query=query,
+                    context_documents=documents,
+                    user_id=user_id
+                )
+                
+                if llm_response.success and llm_response.content.strip():
+                    # Use LLM-generated response with source citations
+                    response_text = f"🤖 {llm_response.content}\n\n"
+                    
+                    # Add compact source citations
+                    if len(documents) <= 3:
+                        response_text += "📚 **Sources:** "
+                        sources = [f"{doc.source}" for doc in documents[:3]]
+                        response_text += ", ".join(sources)
+                    else:
+                        response_text += f"📚 **Based on {len(documents)} sources** including: "
+                        sources = [f"{doc.source}" for doc in documents[:2]]
+                        response_text += ", ".join(sources) + f" and {len(documents)-2} more"
+                    
+                    response_text += "\n\n💡 _Ask follow-up questions or use `/kb help` for more options._"
+                    
+                    return {
+                        "text": response_text,
+                        "response_type": "in_channel"
+                    }
+                    
+            except Exception as e:
+                logger.warning(f"LLM response generation failed, falling back to basic format: {e}")
+        
+        # Fallback to traditional document listing format
+        if not documents:
+            return {
+                "text": f"🔍 No results found for '{query}'. Try rephrasing your question or check the available documentation.",
+                "response_type": "ephemeral"
+            }
+        
+        # Build traditional response with formatted results
         response_text = f"📚 Found {len(documents)} result{'s' if len(documents) != 1 else ''} for '{query}':\n\n"
         
         for i, doc in enumerate(documents, 1):
