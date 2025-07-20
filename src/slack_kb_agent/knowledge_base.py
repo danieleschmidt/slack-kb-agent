@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 import json
 import logging
 from dataclasses import asdict
@@ -14,6 +14,14 @@ from .vector_search import VectorSearchEngine, is_vector_search_available
 
 logger = logging.getLogger(__name__)
 
+# Import metrics functionality
+try:
+    from .monitoring import get_global_metrics
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+    get_global_metrics = None
+
 
 class KnowledgeBase:
     """Aggregate documents from various sources and provide simple search."""
@@ -22,10 +30,12 @@ class KnowledgeBase:
         self, 
         enable_vector_search: bool = True,
         vector_model: str = "all-MiniLM-L6-v2",
-        similarity_threshold: float = 0.5
+        similarity_threshold: float = 0.5,
+        max_documents: Optional[int] = None
     ) -> None:
         self.sources: List[BaseSource] = []
         self.documents: List[Document] = []
+        self.max_documents = max_documents
         self.enable_vector_search = enable_vector_search and is_vector_search_available()
         
         if self.enable_vector_search:
@@ -54,17 +64,23 @@ class KnowledgeBase:
         """Load all documents from registered sources."""
         for source in self.sources:
             self.documents.extend(source.load())
+        self._enforce_document_limit()
+        self._update_memory_metrics()
         self._rebuild_vector_index()
 
     def add_document(self, document: Document) -> None:
         """Add a single document to the knowledge base."""
         self.documents.append(document)
+        self._enforce_document_limit()
+        self._update_memory_metrics()
         if self.enable_vector_search and self.vector_engine:
             self.vector_engine.add_document(document)
 
     def add_documents(self, documents: List[Document]) -> None:
         """Add multiple documents to the knowledge base."""
         self.documents.extend(documents)
+        self._enforce_document_limit()
+        self._update_memory_metrics()
         self._rebuild_vector_index()
     
     def _rebuild_vector_index(self) -> None:
@@ -163,6 +179,76 @@ class KnowledgeBase:
             raise AttributeError("Vector search not enabled")
         return self.vector_engine.generate_embedding(text)
 
+    def _enforce_document_limit(self) -> None:
+        """Enforce maximum document limit by removing oldest documents if needed."""
+        if self.max_documents is None or len(self.documents) <= self.max_documents:
+            return
+        
+        # Calculate how many documents to remove
+        excess_count = len(self.documents) - self.max_documents
+        
+        # Remove oldest documents (FIFO eviction)
+        removed_docs = self.documents[:excess_count]
+        self.documents = self.documents[excess_count:]
+        
+        # Log the eviction for monitoring
+        logger.info(f"Evicted {excess_count} documents to enforce limit of {self.max_documents}")
+        
+        # Update memory metrics
+        self._update_memory_metrics()
+        
+        # If vector search is enabled, we need to rebuild the index since we can't 
+        # selectively remove documents from FAISS index
+        if self.enable_vector_search and self.vector_engine and removed_docs:
+            logger.debug("Rebuilding vector index after document eviction")
+            self._rebuild_vector_index()
+
+    def _update_memory_metrics(self) -> None:
+        """Update memory usage metrics for monitoring."""
+        if not METRICS_AVAILABLE or not get_global_metrics:
+            return
+        
+        try:
+            metrics = get_global_metrics()
+            
+            # Document count metrics
+            metrics.set_gauge("kb_documents_count", len(self.documents))
+            if self.max_documents:
+                metrics.set_gauge("kb_documents_limit", self.max_documents)
+                usage_percent = (len(self.documents) / self.max_documents) * 100
+                metrics.set_gauge("kb_documents_usage_percent", usage_percent)
+            
+            # Estimate memory usage (rough approximation)
+            estimated_bytes = sum(len(doc.content.encode('utf-8')) + len(doc.source.encode('utf-8')) 
+                                for doc in self.documents)
+            metrics.set_gauge("kb_estimated_memory_bytes", estimated_bytes)
+            
+            # Source count
+            metrics.set_gauge("kb_sources_count", len(self.sources))
+            
+        except Exception:
+            # Don't let metrics collection crash the application
+            pass
+
+    def get_memory_stats(self) -> Dict[str, Any]:
+        """Get memory usage statistics for this knowledge base."""
+        stats = {
+            "documents_count": len(self.documents),
+            "sources_count": len(self.sources),
+            "max_documents": self.max_documents,
+        }
+        
+        if self.max_documents:
+            stats["documents_usage_percent"] = (len(self.documents) / self.max_documents) * 100
+        
+        # Estimate memory usage
+        estimated_bytes = sum(len(doc.content.encode('utf-8')) + len(doc.source.encode('utf-8')) 
+                            for doc in self.documents)
+        stats["estimated_memory_bytes"] = estimated_bytes
+        stats["estimated_memory_mb"] = estimated_bytes / (1024 * 1024)
+        
+        return stats
+
     # Persistence helpers -------------------------------------------------
 
     def to_dict(self) -> dict[str, list[dict]]:
@@ -170,9 +256,9 @@ class KnowledgeBase:
         return {"documents": [asdict(d) for d in self.documents]}
 
     @classmethod
-    def from_dict(cls, data: dict[str, list[dict]]) -> "KnowledgeBase":
+    def from_dict(cls, data: dict[str, list[dict]], max_documents: Optional[int] = None) -> "KnowledgeBase":
         """Create a knowledge base from a dictionary."""
-        kb = cls()
+        kb = cls(max_documents=max_documents)
         for item in data.get("documents", []):
             if not isinstance(item, dict):
                 continue
@@ -184,16 +270,16 @@ class KnowledgeBase:
         Path(path).write_text(json.dumps(self.to_dict()), encoding="utf-8")
 
     @classmethod
-    def load(cls, path: str | Path) -> "KnowledgeBase":
+    def load(cls, path: str | Path, max_documents: Optional[int] = None) -> "KnowledgeBase":
         """Load documents from ``path`` and return a new knowledge base."""
         try:
             text = Path(path).read_text(encoding="utf-8")
         except OSError:
-            return cls()
+            return cls(max_documents=max_documents)
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
-            return cls()
+            return cls(max_documents=max_documents)
         if not isinstance(data, dict):
-            return cls()
-        return cls.from_dict(data)
+            return cls(max_documents=max_documents)
+        return cls.from_dict(data, max_documents=max_documents)

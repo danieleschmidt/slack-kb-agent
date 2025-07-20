@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import time
 import logging
+from collections import OrderedDict
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any
@@ -423,10 +424,11 @@ class QueryProcessor:
 class EnhancedQueryProcessor(QueryProcessor):
     """Enhanced query processor with LLM integration and advanced features."""
     
-    def __init__(self, kb: KnowledgeBase, **kwargs):
+    def __init__(self, kb: KnowledgeBase, max_user_contexts: Optional[int] = 1000, **kwargs):
         super().__init__(kb, **kwargs)
         self.query_expansion = QueryExpansion()
-        self.user_contexts: Dict[str, QueryContext] = {}
+        self.user_contexts: OrderedDict[str, QueryContext] = OrderedDict()
+        self.max_user_contexts = max_user_contexts
         self.metrics = get_global_metrics()
         self.structured_logger = StructuredLogger("enhanced_query_processor")
     
@@ -560,15 +562,61 @@ class EnhancedQueryProcessor(QueryProcessor):
                 )
     
     def _get_user_context(self, user_id: str) -> QueryContext:
-        """Get or create user context."""
-        if user_id not in self.user_contexts:
-            self.user_contexts[user_id] = QueryContext(user_id)
+        """Get or create user context with LRU eviction."""
+        # If user exists, move to end (mark as recently used)
+        if user_id in self.user_contexts:
+            context = self.user_contexts.pop(user_id)
+            self.user_contexts[user_id] = context
+        else:
+            # Create new context
+            context = QueryContext(user_id)
+            self.user_contexts[user_id] = context
+            
+            # Enforce max_user_contexts limit with LRU eviction
+            if self.max_user_contexts is not None and len(self.user_contexts) > self.max_user_contexts:
+                # Remove least recently used context (first item)
+                oldest_user, oldest_context = self.user_contexts.popitem(last=False)
+                logger.info(f"Evicted user context for {oldest_user} due to LRU limit of {self.max_user_contexts}")
+        
+        # Update memory metrics
+        self._update_context_metrics()
         
         # Cleanup expired contexts periodically
-        context = self.user_contexts[user_id]
         context.cleanup_expired()
         
         return context
+
+    def _update_context_metrics(self) -> None:
+        """Update user context memory metrics."""
+        try:
+            self.metrics.set_gauge("query_processor_user_contexts_count", len(self.user_contexts))
+            if self.max_user_contexts:
+                self.metrics.set_gauge("query_processor_user_contexts_limit", self.max_user_contexts)
+                usage_percent = (len(self.user_contexts) / self.max_user_contexts) * 100
+                self.metrics.set_gauge("query_processor_user_contexts_usage_percent", usage_percent)
+            
+            # Count total history entries across all contexts
+            total_history_entries = sum(len(ctx.history) for ctx in self.user_contexts.values())
+            self.metrics.set_gauge("query_processor_total_history_entries", total_history_entries)
+            
+        except Exception:
+            # Don't let metrics collection crash the application
+            pass
+
+    def get_memory_stats(self) -> Dict[str, Any]:
+        """Get memory usage statistics for the query processor."""
+        total_history_entries = sum(len(ctx.history) for ctx in self.user_contexts.values())
+        
+        stats = {
+            "user_contexts_count": len(self.user_contexts),
+            "max_user_contexts": self.max_user_contexts,
+            "total_history_entries": total_history_entries,
+        }
+        
+        if self.max_user_contexts:
+            stats["user_contexts_usage_percent"] = (len(self.user_contexts) / self.max_user_contexts) * 100
+        
+        return stats
     
     def _expand_query(self, query: str, intent: QueryIntent) -> List[str]:
         """Expand query based on intent and available methods."""

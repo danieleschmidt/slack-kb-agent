@@ -78,19 +78,25 @@ class AuthConfig:
 
 
 class RateLimiter:
-    """Simple in-memory rate limiter."""
+    """Simple in-memory rate limiter with TTL cleanup."""
     
-    def __init__(self, max_requests: int, window_seconds: int):
+    def __init__(self, max_requests: int, window_seconds: int, cleanup_interval: int = 3600):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
+        self.cleanup_interval = cleanup_interval  # Seconds between cleanup runs
         self.requests: Dict[str, List[float]] = {}
+        self.last_cleanup = time.time()
     
     def is_allowed(self, identifier: str) -> bool:
         """Check if request is allowed for the given identifier."""
         now = time.time()
+        
+        # Perform periodic cleanup to prevent memory growth
+        self._cleanup_if_needed(now)
+        
         window_start = now - self.window_seconds
         
-        # Clean old requests
+        # Clean old requests for this identifier
         if identifier in self.requests:
             self.requests[identifier] = [
                 req_time for req_time in self.requests[identifier]
@@ -102,9 +108,89 @@ class RateLimiter:
         # Check if under limit
         if len(self.requests[identifier]) < self.max_requests:
             self.requests[identifier].append(now)
+            # Update metrics periodically (not on every request to avoid overhead)
+            if len(self.requests[identifier]) == 1:  # New identifier added
+                self._update_memory_metrics()
             return True
         
         return False
+
+    def _cleanup_if_needed(self, now: float) -> None:
+        """Perform cleanup if enough time has passed since last cleanup."""
+        if now - self.last_cleanup >= self.cleanup_interval:
+            self._cleanup_expired_identifiers(now)
+            self.last_cleanup = now
+
+    def _cleanup_expired_identifiers(self, now: float) -> None:
+        """Remove identifiers with no recent requests (TTL cleanup)."""
+        window_start = now - self.window_seconds
+        expired_identifiers = []
+        
+        for identifier, request_times in self.requests.items():
+            # Filter out expired requests
+            active_requests = [
+                req_time for req_time in request_times 
+                if req_time > window_start
+            ]
+            
+            if active_requests:
+                # Update with only active requests
+                self.requests[identifier] = active_requests
+            else:
+                # Mark for removal if no active requests
+                expired_identifiers.append(identifier)
+        
+        # Remove expired identifiers
+        for identifier in expired_identifiers:
+            del self.requests[identifier]
+        
+        if expired_identifiers:
+            logger.info(f"Rate limiter cleaned up {len(expired_identifiers)} expired identifiers")
+            
+        # Update memory metrics after cleanup
+        self._update_memory_metrics()
+
+    def cleanup_now(self) -> int:
+        """Force immediate cleanup and return number of cleaned identifiers."""
+        now = time.time()
+        before_count = len(self.requests)
+        self._cleanup_expired_identifiers(now)
+        self.last_cleanup = now
+        cleaned_count = before_count - len(self.requests)
+        return cleaned_count
+
+    def get_stats(self) -> Dict[str, int]:
+        """Get current rate limiter statistics."""
+        now = time.time()
+        active_identifiers = 0
+        total_requests = 0
+        
+        for request_times in self.requests.values():
+            if request_times:
+                active_identifiers += 1
+                total_requests += len(request_times)
+        
+        return {
+            "active_identifiers": active_identifiers,
+            "total_requests": total_requests,
+            "total_tracked_identifiers": len(self.requests)
+        }
+
+    def _update_memory_metrics(self) -> None:
+        """Update memory usage metrics for monitoring."""
+        try:
+            # Import here to avoid circular imports
+            from .monitoring import get_global_metrics
+            metrics = get_global_metrics()
+            
+            stats = self.get_stats()
+            metrics.set_gauge("rate_limiter_active_identifiers", stats["active_identifiers"])
+            metrics.set_gauge("rate_limiter_total_requests", stats["total_requests"])
+            metrics.set_gauge("rate_limiter_tracked_identifiers", stats["total_tracked_identifiers"])
+            
+        except Exception:
+            # Don't let metrics collection crash the application
+            pass
 
 
 class AuditLogger:

@@ -7,9 +7,9 @@ _Last updated: 2025-07-19 - Post P1/P2 Completion_
 - ✅ **P2: Slack Bot Server** - Production-ready with real-time event handling
 
 ## 🎯 Current Sprint Priority
-**Next Target: P3 - Security & Permission System** (WSJF: 4.2)
-- Critical security gap now that bot is production-ready
-- High risk without proper access controls
+**Next Target: P8.2 - Error Handling Improvements** (WSJF: 2.8)
+- Improve debugging capabilities and system reliability
+- Replace broad exception handlers with specific error types for better monitoring
 
 ## Prioritization Framework (WSJF)
 
@@ -143,6 +143,43 @@ Scale: 1-5 for each factor
   - ✅ Real-time monitoring server running alongside Slack bot
   - ✅ Comprehensive metrics for query processing, intent classification, and system health
   - [ ] Set up alerting rules
+
+### ✅ P8.1: Memory Management & Resource Limits - COMPLETED
+**WSJF Score: 3.5** (14/4) - **Status: COMPLETED v1.6.1**
+- **Impact**: UV:3, BV:3, RR:5, TC:3 = 14 _(prevents memory leaks in production)_
+- **Effort**: DC:2, TR:1, DP:1 = 4
+- **Description**: ✅ Add size limits to unbounded collections to prevent memory issues
+- **Files**: `src/slack_kb_agent/knowledge_base.py`, `query_processor.py`, `auth.py`, `monitoring.py`
+- **Delivered**:
+  - ✅ Added configurable max_documents limit to KnowledgeBase with FIFO eviction
+  - ✅ Implemented LRU eviction for user contexts in EnhancedQueryProcessor
+  - ✅ Added TTL-based cleanup for RateLimiter.requests dictionary with configurable intervals
+  - ✅ Added comprehensive memory usage monitoring metrics for all components
+  - ✅ Implemented memory stats reporting with estimated memory usage
+  - ✅ Added comprehensive test coverage for all memory management features
+
+### P8.2: Error Handling Improvements
+**WSJF Score: 2.8** (11/4) - **Status: IDENTIFIED**
+- **Impact**: UV:2, BV:3, RR:4, TC:2 = 11 _(improves debugging and reliability)_
+- **Effort**: DC:2, TR:1, DP:1 = 4
+- **Description**: Replace broad exception handlers with specific error types
+- **Files**: `src/slack_kb_agent/monitoring.py`
+- **Tasks**:
+  - [ ] Replace generic Exception handlers in monitoring module
+  - [ ] Add specific error types for different failure modes
+  - [ ] Improve error logging with context information
+  - [ ] Add error metrics for monitoring failure patterns
+
+### P8.3: HTTP Server Integration Tests
+**WSJF Score: 2.0** (8/4) - **Status: TODO IDENTIFIED**
+- **Impact**: UV:1, BV:2, RR:3, TC:2 = 8 _(completes test coverage gap)_
+- **Effort**: DC:2, TR:1, DP:1 = 4
+- **Description**: Add missing HTTP server integration tests for authentication
+- **Files**: `tests/test_monitoring_auth.py`
+- **Tasks**:
+  - [ ] Implement HTTP server integration tests as noted in TODO comment
+  - [ ] Test authentication middleware with real HTTP requests
+  - [ ] Verify security headers and response codes
 
 ### P9: Caching Layer
 **WSJF Score: 2.2** (11/5)
