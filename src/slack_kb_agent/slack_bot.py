@@ -11,6 +11,9 @@ from .knowledge_base import KnowledgeBase
 from .models import Document
 from .analytics import UsageAnalytics
 from .query_processor import QueryProcessor
+from .validation import validate_slack_input, sanitize_query, get_validator
+from .rate_limiting import get_user_rate_limiter, RateLimitResult
+from .llm import get_response_generator, LLMResponse
 
 logger = logging.getLogger(__name__)
 
@@ -123,11 +126,19 @@ class SlackBotServer:
                 user_id = command.get("user_id")
                 channel_id = command.get("channel_id")
                 
+                # Check rate limiting for slash commands
+                rate_limiter = get_user_rate_limiter()
+                rate_result = rate_limiter.check_user_rate_limit(user_id, query)
+                if not rate_result.allowed:
+                    logger.warning(f"Slash command rate limit exceeded for user {user_id}: {rate_result.error_message}")
+                    say(f"⏰ {rate_result.error_message}")
+                    return
+                
                 if not query:
                     say(self._get_help_text())
                     return
                 
-                # Process special commands
+                # Process special commands (these are safe)
                 if query.lower() in ["help", "--help", "-h"]:
                     say(self._get_help_text())
                     return
@@ -135,9 +146,20 @@ class SlackBotServer:
                     say(self._get_stats_text())
                     return
                 
+                # Sanitize and validate the query for search
+                sanitized_query = sanitize_query(query)
+                if not sanitized_query:
+                    logger.warning(f"Dangerous slash command query blocked from user {user_id}: {query}")
+                    say("Sorry, I can't process that request. Please try a different search query.")
+                    return
+                
+                # Log if query was modified during sanitization
+                if sanitized_query != query:
+                    logger.info(f"Slash command query sanitized for user {user_id}: '{query}' -> '{sanitized_query}'")
+                
                 # Process search query
-                results = self.process_query(query, user_id, channel_id)
-                response = self.format_response(results, query)
+                results = self.process_query(sanitized_query, user_id, channel_id)
+                response = self.format_response(results, sanitized_query, user_id)
                 say(response)
                 
             except Exception as e:
@@ -146,8 +168,24 @@ class SlackBotServer:
     
     def _handle_query_event(self, event: Dict[str, Any], say, client, is_mention: bool) -> None:
         """Handle query events from mentions or DMs."""
-        text = event.get("text", "")
         user_id = event.get("user")
+        
+        # Check rate limiting first
+        rate_limiter = get_user_rate_limiter()
+        rate_result = rate_limiter.check_user_rate_limit(user_id, event.get("text", ""))
+        if not rate_result.allowed:
+            logger.warning(f"Rate limit exceeded for user {user_id}: {rate_result.error_message}")
+            say(f"⏰ {rate_result.error_message}")
+            return
+        
+        # Validate Slack input
+        validation_result = validate_slack_input(event)
+        if not validation_result.is_valid:
+            logger.warning(f"Invalid Slack input from user {user_id}: {validation_result.error_message}")
+            say("Sorry, I couldn't process your request. Please try rephrasing your question.")
+            return
+        
+        text = event.get("text", "")
         channel_id = event.get("channel")
         
         # Extract query from mention (remove bot mention)
@@ -162,9 +200,20 @@ class SlackBotServer:
             say(self._get_help_text())
             return
         
-        # Process the query
-        results = self.process_query(query, user_id, channel_id)
-        response = self.format_response(results, query)
+        # Sanitize and validate the query
+        sanitized_query = sanitize_query(query)
+        if not sanitized_query:
+            logger.warning(f"Dangerous query blocked from user {user_id}: {query}")
+            say("Sorry, I can't process that request. Please try a different question.")
+            return
+        
+        # Log if query was modified during sanitization
+        if sanitized_query != query:
+            logger.info(f"Query sanitized for user {user_id}: '{query}' -> '{sanitized_query}'")
+        
+        # Process the sanitized query
+        results = self.process_query(sanitized_query, user_id, channel_id)
+        response = self.format_response(results, sanitized_query, user_id)
         say(response)
     
     def process_query(
@@ -208,29 +257,65 @@ class SlackBotServer:
                 logger.error(f"Fallback search also failed: {fallback_error}")
                 return []
     
-    def format_response(self, documents: List[Document], query: str) -> Dict[str, Any]:
-        """Format search results for Slack response.
+    def format_response(self, documents: List[Document], query: str, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """Format search results for Slack response with optional LLM enhancement.
         
         Args:
             documents: List of relevant documents
             query: Original search query
+            user_id: User ID for LLM personalization
             
         Returns:
             Slack response payload
         """
-        if not documents:
-            return {
-                "text": f"🔍 No results found for '{query}'. Try rephrasing your question or check the available documentation.",
-                "response_type": "ephemeral"
-            }
-        
         if not query.strip():
             return {
                 "text": self._get_help_text(),
                 "response_type": "ephemeral"
             }
         
-        # Build response with formatted results
+        # Try to generate intelligent response using LLM
+        response_generator = get_response_generator()
+        if response_generator.is_available() and documents:
+            try:
+                llm_response = response_generator.generate_response(
+                    query=query,
+                    context_documents=documents,
+                    user_id=user_id
+                )
+                
+                if llm_response.success and llm_response.content.strip():
+                    # Use LLM-generated response with source citations
+                    response_text = f"🤖 {llm_response.content}\n\n"
+                    
+                    # Add compact source citations
+                    if len(documents) <= 3:
+                        response_text += "📚 **Sources:** "
+                        sources = [f"{doc.source}" for doc in documents[:3]]
+                        response_text += ", ".join(sources)
+                    else:
+                        response_text += f"📚 **Based on {len(documents)} sources** including: "
+                        sources = [f"{doc.source}" for doc in documents[:2]]
+                        response_text += ", ".join(sources) + f" and {len(documents)-2} more"
+                    
+                    response_text += "\n\n💡 _Ask follow-up questions or use `/kb help` for more options._"
+                    
+                    return {
+                        "text": response_text,
+                        "response_type": "in_channel"
+                    }
+                    
+            except Exception as e:
+                logger.warning(f"LLM response generation failed, falling back to basic format: {e}")
+        
+        # Fallback to traditional document listing format
+        if not documents:
+            return {
+                "text": f"🔍 No results found for '{query}'. Try rephrasing your question or check the available documentation.",
+                "response_type": "ephemeral"
+            }
+        
+        # Build traditional response with formatted results
         response_text = f"📚 Found {len(documents)} result{'s' if len(documents) != 1 else ''} for '{query}':\n\n"
         
         for i, doc in enumerate(documents, 1):

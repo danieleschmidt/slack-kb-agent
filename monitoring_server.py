@@ -17,6 +17,7 @@ Environment Variables:
 import sys
 import os
 import json
+import time
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
@@ -31,6 +32,7 @@ from slack_kb_agent import (
     HealthChecker,
     MonitoringConfig
 )
+from slack_kb_agent.auth import get_auth_middleware, AuthConfig
 
 
 class MonitoringHandler(BaseHTTPRequestHandler):
@@ -39,11 +41,22 @@ class MonitoringHandler(BaseHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         self.metrics = get_global_metrics()
         self.health_checker = HealthChecker()
+        self.auth_middleware = get_auth_middleware()
         super().__init__(*args, **kwargs)
     
     def do_GET(self):
         """Handle GET requests."""
         path = urlparse(self.path).path
+        
+        # Authenticate request
+        headers = dict(self.headers)
+        client_ip = self.client_address[0] if self.client_address else "unknown"
+        
+        auth_result = self.auth_middleware.authenticate_request(path, headers, client_ip)
+        
+        if not auth_result.is_authenticated:
+            self.send_auth_error(auth_result.error_message)
+            return
         
         try:
             if path == "/metrics":
@@ -87,8 +100,9 @@ class MonitoringHandler(BaseHTTPRequestHandler):
         if kb_path.exists():
             try:
                 kb = KnowledgeBase.load(kb_path)
-            except Exception:
-                pass  # Health check will handle the failure
+            except Exception as e:
+                logger.warning(f"Failed to load knowledge base for health check: {e}")
+                # Health check will handle the kb=None case
         
         health_status = self.health_checker.get_health_status(kb)
         content = json.dumps(health_status, indent=2)
@@ -112,8 +126,9 @@ class MonitoringHandler(BaseHTTPRequestHandler):
             try:
                 kb = KnowledgeBase.load(kb_path)
                 doc_count = len(kb.documents)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to load knowledge base for status: {e}")
+                # Continue with doc_count = 0
         
         config = MonitoringConfig.from_env()
         
@@ -142,6 +157,22 @@ class MonitoringHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content.encode('utf-8'))
     
+    def send_auth_error(self, message: str):
+        """Send authentication error response."""
+        self.send_response(401)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("WWW-Authenticate", 'Basic realm="Monitoring Server"')
+        self.end_headers()
+        
+        error_response = {
+            "error": "Authentication required",
+            "message": message,
+            "timestamp": json.dumps(time.time())
+        }
+        
+        content = json.dumps(error_response, indent=2)
+        self.wfile.write(content.encode('utf-8'))
+    
     def log_message(self, format, *args):
         """Override to reduce log spam."""
         # Only log errors, not every request
@@ -162,6 +193,18 @@ def main():
     
     config = MonitoringConfig.from_env()
     port = int(os.getenv("MONITORING_PORT", config.metrics_port))
+    
+    # Show authentication configuration
+    auth_config = AuthConfig.from_env()
+    if auth_config.enabled:
+        print(f"🔒 Authentication: {auth_config.method}")
+        if auth_config.method in ["basic", "mixed"]:
+            print(f"   Basic auth users: {len(auth_config.basic_auth_users)}")
+        if auth_config.method in ["api_key", "mixed"]:
+            print(f"   API keys configured: {len(auth_config.api_keys)}")
+        print(f"   Protected endpoints: {', '.join(auth_config.protected_endpoints)}")
+    else:
+        print("⚠️  Authentication is DISABLED")
     
     # Check if knowledge base exists
     kb_path = Path(os.getenv("KB_DATA_PATH", "kb.json"))

@@ -474,6 +474,50 @@ def get_monitoring_endpoints():
     }
 
 
+def start_monitoring_server(port: int = 9090, kb=None):
+    """Start HTTP server for monitoring endpoints."""
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    import threading
+    
+    endpoints = get_monitoring_endpoints()
+    
+    class MonitoringHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            """Handle GET requests to monitoring endpoints."""
+            if self.path == "/metrics":
+                content, status, headers = endpoints["/metrics"]()
+            elif self.path == "/health":
+                content, status, headers = endpoints["/health"](kb)
+            elif self.path == "/metrics.json":
+                content, status, headers = endpoints["/metrics.json"]()
+            else:
+                content = "Not Found"
+                status = 404
+                headers = {"Content-Type": "text/plain"}
+            
+            self.send_response(status)
+            for key, value in headers.items():
+                self.send_header(key, value)
+            self.end_headers()
+            self.wfile.write(content.encode('utf-8'))
+        
+        def log_message(self, format, *args):
+            """Suppress default HTTP server logging."""
+            pass
+    
+    def run_server():
+        server = HTTPServer(('0.0.0.0', port), MonitoringHandler)
+        logger = StructuredLogger("monitoring_server")
+        logger.info(f"Monitoring server started", port=port)
+        server.serve_forever()
+    
+    # Start server in background thread
+    thread = threading.Thread(target=run_server, daemon=True)
+    thread.start()
+    
+    return thread
+
+
 # Convenience functions for easy integration
 def track_query_performance(func):
     """Decorator to track query performance."""

@@ -34,7 +34,8 @@ from slack_kb_agent import (
     UsageAnalytics,
     setup_monitoring,
     MonitoredKnowledgeBase,
-    get_global_metrics
+    get_global_metrics,
+    start_monitoring_server
 )
 
 
@@ -147,6 +148,14 @@ def main():
         print(f"📊 Vector search: {'enabled' if kb.kb.enable_vector_search else 'disabled'}")
         print(f"📈 Analytics: {analytics.total_queries} total queries")
         print(f"🔍 Monitoring: {'enabled' if monitoring['status'] == 'enabled' else 'disabled'}")
+        
+        # Start monitoring server if enabled
+        if monitoring["status"] == "enabled":
+            monitoring_port = int(os.getenv("MONITORING_PORT", "9090"))
+            start_monitoring_server(monitoring_port, kb)
+            print(f"📊 Monitoring server: http://localhost:{monitoring_port}/health")
+            print(f"📈 Metrics endpoint: http://localhost:{monitoring_port}/metrics")
+        
         print("\n🚀 Starting bot server...")
         
         # Start the bot
