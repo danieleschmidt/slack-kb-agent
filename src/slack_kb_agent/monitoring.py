@@ -14,6 +14,13 @@ from typing import Dict, List, Any, Optional, Union
 from collections import defaultdict, deque
 import statistics
 
+from .exceptions import (
+    MetricsCollectionError,
+    HealthCheckError,
+    SystemResourceError,
+    KnowledgeBaseHealthError
+)
+
 # Optional system monitoring dependency
 try:
     import psutil
@@ -21,6 +28,8 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
     psutil = None
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -169,15 +178,47 @@ class MetricsCollector:
         try:
             # System memory metrics
             if PSUTIL_AVAILABLE:
-                memory = psutil.virtual_memory()
-                self.set_gauge("system_memory_usage_bytes", memory.used)
-                self.set_gauge("system_memory_usage_percent", memory.percent)
-                self.set_gauge("system_memory_available_bytes", memory.available)
+                try:
+                    memory = psutil.virtual_memory()
+                    self.set_gauge("system_memory_usage_bytes", memory.used)
+                    self.set_gauge("system_memory_usage_percent", memory.percent)
+                    self.set_gauge("system_memory_available_bytes", memory.available)
+                except (AttributeError, OSError) as e:
+                    # Log specific system resource errors but don't crash
+                    logger.warning(f"Failed to collect system memory metrics: {e}")
+                    self.increment_counter("metrics_collection_errors_total")
+                    self.increment_counter("system_memory_collection_errors_total")
+            
+            # Cache metrics (if Redis caching is available)
+            try:
+                from .cache import get_cache_manager
+                cache_manager = get_cache_manager()
+                cache_stats = cache_manager.get_cache_stats()
+                
+                if cache_stats.get("status") == "connected":
+                    self.set_gauge("cache_available", 1)
+                    self.set_gauge("cache_hit_rate", cache_stats.get("hit_rate", 0))
+                    self.set_gauge("cache_connected_clients", cache_stats.get("connected_clients", 0))
+                    
+                    key_counts = cache_stats.get("key_counts", {})
+                    for namespace, count in key_counts.items():
+                        self.set_gauge(f"cache_keys_{namespace}", count)
+                else:
+                    self.set_gauge("cache_available", 0)
+                    
+            except Exception as e:
+                # Don't let cache metrics crash the monitoring
+                self.set_gauge("cache_available", 0)
+                logger.debug(f"Cache metrics collection failed: {e}")
             
             # Application-specific memory metrics would be collected by the components themselves
             # This is called periodically to update memory-related gauges
             
-        except Exception:
+        except Exception as e:
+            # Log unexpected errors in metrics collection
+            logger.error(f"Unexpected error in memory metrics collection: {e}")
+            self.increment_counter("metrics_collection_errors_total")
+            self.increment_counter("memory_metrics_unexpected_errors_total")
             # Don't let metrics collection crash the application
             pass
     
@@ -221,8 +262,14 @@ class HealthChecker:
                 return "warning"
             else:
                 return "healthy"
-        except Exception:
-            return "healthy"  # Default to healthy on error
+        except (AttributeError, OSError) as e:
+            # Log specific system resource errors
+            logger.warning(f"Failed to check memory usage: {e}")
+            return "unknown"  # Indicate we couldn't check
+        except Exception as e:
+            # Log unexpected errors
+            logger.error(f"Unexpected error checking memory: {e}")
+            return "unknown"
     
     def check_disk_space(self) -> str:
         """Check disk space usage."""
@@ -239,23 +286,42 @@ class HealthChecker:
                 return "warning"
             else:
                 return "healthy"
-        except Exception:
-            return "healthy"
+        except (AttributeError, OSError, ZeroDivisionError) as e:
+            # Log specific system resource errors
+            logger.warning(f"Failed to check disk space: {e}")
+            return "unknown"
+        except Exception as e:
+            # Log unexpected errors
+            logger.error(f"Unexpected error checking disk space: {e}")
+            return "unknown"
     
     def check_knowledge_base(self, kb) -> str:
         """Check knowledge base health."""
+        if kb is None:
+            logger.warning("Knowledge base is None, cannot check health")
+            return "critical"
+        
         try:
             if not hasattr(kb, 'documents'):
+                logger.error("Knowledge base missing 'documents' attribute")
                 return "critical"
             
             doc_count = len(kb.documents)
             if doc_count == 0:
+                logger.warning("Knowledge base is empty")
                 return "warning"  # Empty KB is concerning but not critical
             elif doc_count < 10:
+                logger.info(f"Knowledge base has only {doc_count} documents, might indicate ingestion issues")
                 return "warning"  # Small KB might indicate ingestion issues
             else:
                 return "healthy"
-        except Exception:
+        except (AttributeError, TypeError) as e:
+            # Log specific knowledge base errors
+            logger.error(f"Knowledge base health check failed - invalid KB structure: {e}")
+            return "critical"
+        except Exception as e:
+            # Log unexpected errors
+            logger.error(f"Unexpected error checking knowledge base health: {e}")
             return "critical"
     
     def get_health_status(self, kb=None) -> Dict[str, Any]:
@@ -274,6 +340,8 @@ class HealthChecker:
             overall_status = "critical"
         elif any(status == "warning" for status in check_results.values()):
             overall_status = "warning"
+        elif any(status == "unknown" for status in check_results.values()):
+            overall_status = "unknown"
         else:
             overall_status = "healthy"
         

@@ -11,6 +11,7 @@ from pathlib import Path
 from .models import Document
 from .sources import BaseSource
 from .vector_search import VectorSearchEngine, is_vector_search_available
+from .cache import get_cache_manager
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,12 @@ class KnowledgeBase:
         self._update_memory_metrics()
         if self.enable_vector_search and self.vector_engine:
             self.vector_engine.add_document(document)
+        
+        # Invalidate search cache when documents are added
+        cache_manager = get_cache_manager()
+        invalidated = cache_manager.invalidate_search_cache()
+        if invalidated > 0:
+            logger.debug(f"Invalidated {invalidated} search cache entries after adding document")
 
     def add_documents(self, documents: List[Document]) -> None:
         """Add multiple documents to the knowledge base."""
@@ -82,6 +89,12 @@ class KnowledgeBase:
         self._enforce_document_limit()
         self._update_memory_metrics()
         self._rebuild_vector_index()
+        
+        # Invalidate search cache when documents are added
+        cache_manager = get_cache_manager()
+        invalidated = cache_manager.invalidate_search_cache()
+        if invalidated > 0:
+            logger.debug(f"Invalidated {invalidated} search cache entries after adding {len(documents)} documents")
     
     def _rebuild_vector_index(self) -> None:
         """Rebuild the vector search index with current documents."""

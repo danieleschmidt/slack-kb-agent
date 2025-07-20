@@ -1,5 +1,39 @@
 # Changelog
 
+## v1.6.4 - 2025-07-20
+
+- feat(cache): implement comprehensive Redis-based caching layer for performance optimization
+- feat(cache): add embedding caching for vector search with configurable TTL (7 days default)
+- feat(cache): add query expansion caching for synonyms, technical terms, and LLM-based expansion
+- feat(cache): add search results caching with automatic invalidation on document updates
+- feat(cache): integrate cache metrics into monitoring system (hit rates, key counts, availability)
+- feat(cache): add cache invalidation on knowledge base document additions
+- feat(cache): graceful fallback when Redis unavailable with comprehensive error handling
+- feat(monitoring): add cache metrics to health checks and Prometheus metrics
+- tests: comprehensive test coverage for cache functionality and integration
+- docs: update backlog with completed caching layer implementation
+
+## v1.6.3 - 2025-07-20
+
+- feat(tests): implement comprehensive HTTP server integration tests for authentication
+- feat(tests): add tests for basic auth, API key auth, rate limiting, and mixed auth methods
+- feat(auth): fix case-insensitive API key header handling for HTTP server compatibility
+- feat(tests): add real HTTP server testing with standard library (no external dependencies)
+- feat(tests): comprehensive test coverage for all authentication scenarios
+- tests: verify audit logging and error response validation in HTTP integration tests
+- docs: update backlog with completed HTTP server integration tests
+
+## v1.6.2 - 2025-07-20
+
+- feat(exceptions): create comprehensive exception hierarchy for better error handling
+- feat(monitoring): replace broad exception handlers with specific error types
+- feat(monitoring): add detailed error logging with context information
+- feat(monitoring): implement error metrics for monitoring failure patterns
+- feat(monitoring): add "unknown" health status for unreachable system checks
+- feat(monitoring): enhance health check priority system
+- tests: comprehensive test coverage for error handling scenarios
+- docs: update backlog with completed error handling improvements
+
 ## v1.6.1 - 2025-07-20
 
 - feat(memory): implement comprehensive memory management for production stability
