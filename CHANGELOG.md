@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.6.1 - 2025-07-20
+
+- feat(memory): implement comprehensive memory management for production stability
+- feat(memory): add configurable document limits to KnowledgeBase with FIFO eviction
+- feat(memory): implement LRU eviction for user conversation contexts
+- feat(memory): add TTL-based cleanup for rate limiter request tracking
+- feat(monitoring): add memory usage metrics collection and reporting
+- feat(monitoring): add memory stats APIs for all major components
+- tests: comprehensive test coverage for memory management features
+- docs: update backlog with completed memory management implementation
+
 ## v1.3.0 - 2025-07-19
 
 - feat(search): implement vector-based semantic search with FAISS

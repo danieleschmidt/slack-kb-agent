@@ -164,8 +164,28 @@ class MetricsCollector:
         
         return json.dumps(data, indent=2)
     
+    def collect_memory_metrics(self) -> None:
+        """Collect memory usage metrics from key components."""
+        try:
+            # System memory metrics
+            if PSUTIL_AVAILABLE:
+                memory = psutil.virtual_memory()
+                self.set_gauge("system_memory_usage_bytes", memory.used)
+                self.set_gauge("system_memory_usage_percent", memory.percent)
+                self.set_gauge("system_memory_available_bytes", memory.available)
+            
+            # Application-specific memory metrics would be collected by the components themselves
+            # This is called periodically to update memory-related gauges
+            
+        except Exception:
+            # Don't let metrics collection crash the application
+            pass
+    
     def get_metrics_snapshot(self) -> Dict[str, Any]:
         """Get a snapshot of all metrics."""
+        # Update memory metrics before returning
+        self.collect_memory_metrics()
+        
         with self._lock:
             return {
                 "timestamp": time.time(),
