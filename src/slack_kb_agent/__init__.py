@@ -1,6 +1,6 @@
 """Slack Knowledge Base Agent package."""
 
-__version__ = "1.5.0"
+__version__ = "1.6.0"
 
 from .utils import add
 from .models import Document
@@ -30,7 +30,8 @@ from .monitoring import (
     MonitoredKnowledgeBase,
     MonitoringConfig,
     setup_monitoring,
-    get_global_metrics
+    get_global_metrics,
+    start_monitoring_server
 )
 from .query_processor import Query, QueryProcessor
 from .real_time import RealTimeUpdater
@@ -71,6 +72,7 @@ __all__ = [
     "MonitoringConfig",
     "setup_monitoring",
     "get_global_metrics",
+    "start_monitoring_server",
     "Query",
     "QueryProcessor",
     "RealTimeUpdater",

@@ -1,16 +1,20 @@
 """Tests for monitoring and metrics functionality."""
 
-import pytest
+import unittest
 import json
 import time
 from unittest.mock import MagicMock, patch
 from pathlib import Path
+import sys
+
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from slack_kb_agent.knowledge_base import KnowledgeBase
 from slack_kb_agent.models import Document
 
 
-class TestMetricsCollector:
+class TestMetricsCollector(unittest.TestCase):
     """Test metrics collection and reporting."""
 
     def test_metrics_collector_initialization(self):
@@ -18,8 +22,8 @@ class TestMetricsCollector:
         from slack_kb_agent.monitoring import MetricsCollector
         
         collector = MetricsCollector()
-        assert collector.metrics == {}
-        assert hasattr(collector, 'start_time')
+        self.assertEqual(len(collector.counters), 0)
+        self.assertTrue(hasattr(collector, 'start_time'))
 
     def test_counter_metrics(self):
         """Test counter metrics increment correctly."""
@@ -32,9 +36,9 @@ class TestMetricsCollector:
         collector.increment_counter("slack_messages_processed")
         collector.increment_counter("search_queries_total")
         
-        assert collector.get_metric("slack_messages_processed") == 2
-        assert collector.get_metric("search_queries_total") == 1
-        assert collector.get_metric("nonexistent_metric") == 0
+        self.assertEqual(collector.get_metric("slack_messages_processed"), 2)
+        self.assertEqual(collector.get_metric("search_queries_total"), 1)
+        self.assertEqual(collector.get_metric("nonexistent_metric"), 0)
 
     def test_histogram_metrics(self):
         """Test histogram metrics track duration and statistics."""
@@ -48,9 +52,9 @@ class TestMetricsCollector:
         collector.record_histogram("query_duration_seconds", 0.8)
         
         stats = collector.get_histogram_stats("query_duration_seconds")
-        assert stats["count"] == 3
-        assert stats["sum"] == 2.5
-        assert abs(stats["avg"] - 0.833) < 0.01
+        self.assertEqual(stats["count"], 3)
+        self.assertEqual(stats["sum"], 2.5)
+        self.assertLess(abs(stats["avg"] - 0.833), 0.01)
 
     def test_gauge_metrics(self):
         """Test gauge metrics track current values."""
@@ -88,7 +92,7 @@ class TestMetricsCollector:
         assert data["gauges"]["test_gauge"] == 42
 
 
-class TestHealthChecker:
+class TestHealthChecker(unittest.TestCase):
     """Test health check functionality."""
 
     def test_health_checker_initialization(self):
@@ -142,7 +146,7 @@ class TestHealthChecker:
         assert health_report["status"] in ["healthy", "warning", "critical"]
 
 
-class TestPerformanceTracker:
+class TestPerformanceTracker(unittest.TestCase):
     """Test performance tracking and profiling."""
 
     def test_performance_tracker_context_manager(self):
@@ -197,7 +201,7 @@ class TestPerformanceTracker:
         assert stats["count"] == 1
 
 
-class TestStructuredLogger:
+class TestStructuredLogger(unittest.TestCase):
     """Test structured logging functionality."""
 
     def test_structured_logger_initialization(self):
@@ -258,7 +262,7 @@ class TestStructuredLogger:
             mock_logger.critical.assert_called_once()
 
 
-class TestIntegratedMonitoring:
+class TestIntegratedMonitoring(unittest.TestCase):
     """Test integrated monitoring with knowledge base operations."""
 
     def test_knowledge_base_metrics_integration(self):

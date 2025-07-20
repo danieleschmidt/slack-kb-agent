@@ -14,6 +14,7 @@ from .knowledge_base import KnowledgeBase
 from .models import Document
 from .smart_routing import RoutingEngine, TeamMember
 from .llm import get_response_generator, LLMResponse
+from .monitoring import get_global_metrics, StructuredLogger
 
 logger = logging.getLogger(__name__)
 
@@ -426,6 +427,8 @@ class EnhancedQueryProcessor(QueryProcessor):
         super().__init__(kb, **kwargs)
         self.query_expansion = QueryExpansion()
         self.user_contexts: Dict[str, QueryContext] = {}
+        self.metrics = get_global_metrics()
+        self.structured_logger = StructuredLogger("enhanced_query_processor")
     
     def process_query(self, query: Query | str, user_id: Optional[str] = None) -> QueryResult:
         """Enhanced query processing with intent classification and expansion."""
@@ -439,9 +442,14 @@ class EnhancedQueryProcessor(QueryProcessor):
             query_text = query
         
         try:
+            # Track query processing
+            self.metrics.increment_counter("enhanced_queries_total")
+            
             # Classify intent
             intent = QueryIntent.classify(query_text)
-            logger.debug(f"Classified query '{query_text}' as {intent.value}")
+            self.metrics.increment_counter(f"query_intent_{intent.value}_total")
+            self.structured_logger.debug(f"Classified query as {intent.value}", 
+                                       query=query_text, intent=intent.value, user_id=user_id)
             
             # Normalize query
             normalized_query = self.normalize(query_text)
@@ -479,6 +487,18 @@ class EnhancedQueryProcessor(QueryProcessor):
             
             # Calculate processing time
             processing_time = time.time() - start_time
+            self.metrics.record_histogram("enhanced_query_duration_seconds", processing_time)
+            
+            # Log successful query processing
+            self.structured_logger.info(
+                "Query processed successfully",
+                query=query_text,
+                intent=intent.value,
+                documents_found=len(documents),
+                processing_time=processing_time,
+                context_used=context_used,
+                user_id=user_id
+            )
             
             # Create metrics
             response_generator = get_response_generator()
@@ -503,8 +523,17 @@ class EnhancedQueryProcessor(QueryProcessor):
             )
             
         except Exception as e:
-            logger.error(f"Enhanced query processing failed: {e}")
             processing_time = time.time() - start_time
+            self.metrics.increment_counter("enhanced_query_errors_total")
+            self.metrics.record_histogram("enhanced_query_duration_seconds", processing_time)
+            
+            self.structured_logger.error(
+                "Enhanced query processing failed",
+                query=query_text,
+                error=str(e),
+                processing_time=processing_time,
+                user_id=user_id
+            )
             
             # Fallback to basic processing
             try:
