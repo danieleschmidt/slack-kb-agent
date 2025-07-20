@@ -1,6 +1,6 @@
 """Slack Knowledge Base Agent package."""
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 from .utils import add
 from .models import Document

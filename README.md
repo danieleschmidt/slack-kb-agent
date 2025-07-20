@@ -1,6 +1,6 @@
 # Slack-KB-Agent
 
-Current version: 1.3.0
+Current version: 1.5.1
 
 Intelligent Slack bot that answers team questions by indexing and searching across documentation, GitHub issues, code comments, and conversation history.
 
