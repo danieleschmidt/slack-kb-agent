@@ -161,15 +161,440 @@ class TestMonitoringServerWithAuth(unittest.TestCase):
         # For now, we'll just test the auth middleware in isolation
         pass
     
-    def test_integration_placeholder(self):
-        """Placeholder for integration tests."""
-        # TODO: Add integration tests with actual HTTP server
-        # This would test:
-        # 1. Unauthenticated requests return 401
-        # 2. Valid auth returns metrics
-        # 3. Rate limiting works
-        # 4. Audit logging works
-        pass
+    def test_http_server_unauthenticated_request(self):
+        """Test that unauthenticated requests to protected endpoints return 401."""
+        import threading
+        import time
+        import requests
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+        from slack_kb_agent.monitoring import get_monitoring_endpoints
+        from slack_kb_agent.auth import AuthMiddleware, AuthConfig
+        
+        # Configure auth
+        auth_config = AuthConfig(
+            enabled=True,
+            method="basic",
+            basic_username="admin",
+            basic_password="secret123",
+            protected_endpoints=["/metrics", "/health"]
+        )
+        auth_middleware = AuthMiddleware(auth_config)
+        
+        # Get monitoring endpoints
+        endpoints = get_monitoring_endpoints()
+        
+        class TestHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                # Apply authentication middleware
+                headers = dict(self.headers)
+                auth_result = auth_middleware.authenticate_request(
+                    self.path, headers, self.client_address[0]
+                )
+                
+                if not auth_result.is_authenticated:
+                    self.send_response(401)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(b'{"error": "Unauthorized"}')
+                    return
+                
+                # Handle endpoint
+                if self.path in endpoints:
+                    handler = endpoints[self.path]
+                    try:
+                        response, status_code, headers_dict = handler()
+                        self.send_response(status_code)
+                        for header, value in headers_dict.items():
+                            self.send_header(header, value)
+                        self.end_headers()
+                        self.wfile.write(response.encode())
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(f'{{"error": "{str(e)}"}}'.encode())
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+            
+            def log_message(self, format, *args):
+                # Suppress server logs during testing
+                pass
+        
+        # Start test server
+        server = HTTPServer(("localhost", 0), TestHandler)
+        port = server.server_address[1]
+        server_thread = threading.Thread(target=server.serve_forever)
+        server_thread.daemon = True
+        server_thread.start()
+        
+        try:
+            # Wait for server to start
+            time.sleep(0.1)
+            
+            # Test unauthenticated request
+            response = requests.get(f"http://localhost:{port}/metrics", timeout=5)
+            self.assertEqual(response.status_code, 401)
+            self.assertIn("error", response.json())
+            
+        finally:
+            server.shutdown()
+            server_thread.join(timeout=1)
+
+    def test_http_server_authenticated_request(self):
+        """Test that authenticated requests to protected endpoints return data."""
+        import threading
+        import time
+        import requests
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+        from slack_kb_agent.monitoring import get_monitoring_endpoints
+        from slack_kb_agent.auth import AuthMiddleware, AuthConfig
+        import base64
+        
+        # Configure auth
+        auth_config = AuthConfig(
+            enabled=True,
+            method="basic",
+            basic_username="admin",
+            basic_password="secret123",
+            protected_endpoints=["/metrics", "/health"]
+        )
+        auth_middleware = AuthMiddleware(auth_config)
+        
+        # Get monitoring endpoints
+        endpoints = get_monitoring_endpoints()
+        
+        class TestHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                # Apply authentication middleware
+                headers = dict(self.headers)
+                auth_result = auth_middleware.authenticate_request(
+                    self.path, headers, self.client_address[0]
+                )
+                
+                if not auth_result.is_authenticated:
+                    self.send_response(401)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(b'{"error": "Unauthorized"}')
+                    return
+                
+                # Handle endpoint
+                if self.path in endpoints:
+                    handler = endpoints[self.path]
+                    try:
+                        response, status_code, headers_dict = handler()
+                        self.send_response(status_code)
+                        for header, value in headers_dict.items():
+                            self.send_header(header, value)
+                        self.end_headers()
+                        self.wfile.write(response.encode())
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(f'{{"error": "{str(e)}"}}'.encode())
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+            
+            def log_message(self, format, *args):
+                # Suppress server logs during testing
+                pass
+        
+        # Start test server
+        server = HTTPServer(("localhost", 0), TestHandler)
+        port = server.server_address[1]
+        server_thread = threading.Thread(target=server.serve_forever)
+        server_thread.daemon = True
+        server_thread.start()
+        
+        try:
+            # Wait for server to start
+            time.sleep(0.1)
+            
+            # Test authenticated request
+            credentials = base64.b64encode(b"admin:secret123").decode('ascii')
+            headers = {"Authorization": f"Basic {credentials}"}
+            
+            response = requests.get(f"http://localhost:{port}/metrics", headers=headers, timeout=5)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers['Content-Type'], 'text/plain')
+            
+            # Test health endpoint
+            response = requests.get(f"http://localhost:{port}/health", headers=headers, timeout=5)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers['Content-Type'], 'application/json')
+            health_data = response.json()
+            self.assertIn("status", health_data)
+            self.assertIn("timestamp", health_data)
+            
+        finally:
+            server.shutdown()
+            server_thread.join(timeout=1)
+
+    def test_http_server_rate_limiting(self):
+        """Test that rate limiting works with HTTP server."""
+        import threading
+        import time
+        import requests
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+        from slack_kb_agent.monitoring import get_monitoring_endpoints
+        from slack_kb_agent.auth import AuthMiddleware, AuthConfig
+        import base64
+        
+        # Configure auth with low rate limits
+        auth_config = AuthConfig(
+            enabled=True,
+            method="basic",
+            basic_username="admin",
+            basic_password="secret123",
+            protected_endpoints=["/metrics"],
+            rate_limit_requests=2,  # Very low limit
+            rate_limit_window=60
+        )
+        auth_middleware = AuthMiddleware(auth_config)
+        
+        # Get monitoring endpoints
+        endpoints = get_monitoring_endpoints()
+        
+        class TestHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                # Apply authentication middleware
+                headers = dict(self.headers)
+                auth_result = auth_middleware.authenticate_request(
+                    self.path, headers, self.client_address[0]
+                )
+                
+                if not auth_result.is_authenticated:
+                    self.send_response(429 if "rate limit" in auth_result.error_message.lower() else 401)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    error_msg = auth_result.error_message or "Unauthorized"
+                    self.wfile.write(f'{{"error": "{error_msg}"}}'.encode())
+                    return
+                
+                # Handle endpoint
+                if self.path in endpoints:
+                    handler = endpoints[self.path]
+                    try:
+                        response, status_code, headers_dict = handler()
+                        self.send_response(status_code)
+                        for header, value in headers_dict.items():
+                            self.send_header(header, value)
+                        self.end_headers()
+                        self.wfile.write(response.encode())
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(f'{{"error": "{str(e)}"}}'.encode())
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+            
+            def log_message(self, format, *args):
+                # Suppress server logs during testing
+                pass
+        
+        # Start test server
+        server = HTTPServer(("localhost", 0), TestHandler)
+        port = server.server_address[1]
+        server_thread = threading.Thread(target=server.serve_forever)
+        server_thread.daemon = True
+        server_thread.start()
+        
+        try:
+            # Wait for server to start
+            time.sleep(0.1)
+            
+            credentials = base64.b64encode(b"admin:secret123").decode('ascii')
+            headers = {"Authorization": f"Basic {credentials}"}
+            
+            # First request should succeed
+            response = requests.get(f"http://localhost:{port}/metrics", headers=headers, timeout=5)
+            self.assertEqual(response.status_code, 200)
+            
+            # Second request should succeed
+            response = requests.get(f"http://localhost:{port}/metrics", headers=headers, timeout=5)
+            self.assertEqual(response.status_code, 200)
+            
+            # Third request should be rate limited
+            response = requests.get(f"http://localhost:{port}/metrics", headers=headers, timeout=5)
+            self.assertEqual(response.status_code, 429)
+            self.assertIn("rate limit", response.json()["error"].lower())
+            
+        finally:
+            server.shutdown()
+            server_thread.join(timeout=1)
+
+    def test_http_server_api_key_auth(self):
+        """Test API key authentication with HTTP server."""
+        import threading
+        import time
+        import requests
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+        from slack_kb_agent.monitoring import get_monitoring_endpoints
+        from slack_kb_agent.auth import AuthMiddleware, AuthConfig
+        
+        # Configure API key auth
+        auth_config = AuthConfig(
+            enabled=True,
+            method="api_key",
+            api_keys=["test-key-123", "another-key-456"],
+            protected_endpoints=["/metrics.json"]
+        )
+        auth_middleware = AuthMiddleware(auth_config)
+        
+        # Get monitoring endpoints
+        endpoints = get_monitoring_endpoints()
+        
+        class TestHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                # Apply authentication middleware
+                headers = dict(self.headers)
+                auth_result = auth_middleware.authenticate_request(
+                    self.path, headers, self.client_address[0]
+                )
+                
+                if not auth_result.is_authenticated:
+                    self.send_response(401)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(b'{"error": "Unauthorized"}')
+                    return
+                
+                # Handle endpoint
+                if self.path in endpoints:
+                    handler = endpoints[self.path]
+                    try:
+                        response, status_code, headers_dict = handler()
+                        self.send_response(status_code)
+                        for header, value in headers_dict.items():
+                            self.send_header(header, value)
+                        self.end_headers()
+                        self.wfile.write(response.encode())
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(f'{{"error": "{str(e)}"}}'.encode())
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+            
+            def log_message(self, format, *args):
+                # Suppress server logs during testing
+                pass
+        
+        # Start test server
+        server = HTTPServer(("localhost", 0), TestHandler)
+        port = server.server_address[1]
+        server_thread = threading.Thread(target=server.serve_forever)
+        server_thread.daemon = True
+        server_thread.start()
+        
+        try:
+            # Wait for server to start
+            time.sleep(0.1)
+            
+            # Test with valid API key
+            headers = {"X-API-Key": "test-key-123"}
+            response = requests.get(f"http://localhost:{port}/metrics.json", headers=headers, timeout=5)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers['Content-Type'], 'application/json')
+            
+            # Test with invalid API key
+            headers = {"X-API-Key": "invalid-key"}
+            response = requests.get(f"http://localhost:{port}/metrics.json", headers=headers, timeout=5)
+            self.assertEqual(response.status_code, 401)
+            
+        finally:
+            server.shutdown()
+            server_thread.join(timeout=1)
+
+    def test_http_server_unprotected_endpoints(self):
+        """Test that unprotected endpoints work without authentication."""
+        import threading
+        import time
+        import requests
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+        from slack_kb_agent.monitoring import get_monitoring_endpoints
+        from slack_kb_agent.auth import AuthMiddleware, AuthConfig
+        
+        # Configure auth with only some endpoints protected
+        auth_config = AuthConfig(
+            enabled=True,
+            method="basic",
+            basic_username="admin",
+            basic_password="secret123",
+            protected_endpoints=["/metrics"]  # Only /metrics is protected
+        )
+        auth_middleware = AuthMiddleware(auth_config)
+        
+        # Get monitoring endpoints
+        endpoints = get_monitoring_endpoints()
+        
+        class TestHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                # Apply authentication middleware
+                headers = dict(self.headers)
+                auth_result = auth_middleware.authenticate_request(
+                    self.path, headers, self.client_address[0]
+                )
+                
+                if not auth_result.is_authenticated:
+                    self.send_response(401)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(b'{"error": "Unauthorized"}')
+                    return
+                
+                # Handle endpoint
+                if self.path in endpoints:
+                    handler = endpoints[self.path]
+                    try:
+                        response, status_code, headers_dict = handler()
+                        self.send_response(status_code)
+                        for header, value in headers_dict.items():
+                            self.send_header(header, value)
+                        self.end_headers()
+                        self.wfile.write(response.encode())
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(f'{{"error": "{str(e)}"}}'.encode())
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+            
+            def log_message(self, format, *args):
+                # Suppress server logs during testing
+                pass
+        
+        # Start test server
+        server = HTTPServer(("localhost", 0), TestHandler)
+        port = server.server_address[1]
+        server_thread = threading.Thread(target=server.serve_forever)
+        server_thread.daemon = True
+        server_thread.start()
+        
+        try:
+            # Wait for server to start
+            time.sleep(0.1)
+            
+            # Test unprotected endpoint (health) - should work without auth
+            response = requests.get(f"http://localhost:{port}/health", timeout=5)
+            self.assertEqual(response.status_code, 200)
+            
+            # Test protected endpoint (metrics) - should require auth
+            response = requests.get(f"http://localhost:{port}/metrics", timeout=5)
+            self.assertEqual(response.status_code, 401)
+            
+        finally:
+            server.shutdown()
+            server_thread.join(timeout=1)
 
 
 if __name__ == "__main__":

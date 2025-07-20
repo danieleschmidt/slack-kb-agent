@@ -16,6 +16,7 @@ from .models import Document
 from .smart_routing import RoutingEngine, TeamMember
 from .llm import get_response_generator, LLMResponse
 from .monitoring import get_global_metrics, StructuredLogger
+from .cache import get_cache_manager
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,13 @@ class QueryExpansion:
         }
     
     def expand_synonyms(self, query: str) -> List[str]:
-        """Expand query with synonyms."""
+        """Expand query with synonyms, with caching."""
+        # Check cache first
+        cache_manager = get_cache_manager()
+        cached_expansion = cache_manager.get_query_expansion(query, "synonyms")
+        if cached_expansion is not None:
+            return cached_expansion
+        
         expanded = [query]
         words = query.lower().split()
         
@@ -153,10 +160,20 @@ class QueryExpansion:
             if item not in seen:
                 seen.add(item)
                 result.append(item)
+        
+        # Cache the result
+        cache_manager.set_query_expansion(query, "synonyms", result)
+        
         return result
     
     def expand_technical_terms(self, query: str) -> List[str]:
-        """Expand technical abbreviations and acronyms."""
+        """Expand technical abbreviations and acronyms, with caching."""
+        # Check cache first
+        cache_manager = get_cache_manager()
+        cached_expansion = cache_manager.get_query_expansion(query, "technical_terms")
+        if cached_expansion is not None:
+            return cached_expansion
+        
         expansions = {
             "ci/cd": ["continuous integration", "continuous deployment", "pipeline"],
             "api": ["application programming interface", "endpoint", "service"],
@@ -176,10 +193,19 @@ class QueryExpansion:
             if term in query_lower:
                 expanded.extend(expansion)
         
+        # Cache the result
+        cache_manager.set_query_expansion(query, "technical_terms", expanded)
+        
         return expanded
     
     def expand_with_llm(self, query: str, fallback_to_synonyms: bool = True) -> List[str]:
-        """Expand query using LLM for semantic understanding."""
+        """Expand query using LLM for semantic understanding, with caching."""
+        # Check cache first
+        cache_manager = get_cache_manager()
+        cached_expansion = cache_manager.get_query_expansion(query, "llm_expansion")
+        if cached_expansion is not None:
+            return cached_expansion
+        
         response_generator = get_response_generator()
         
         if not response_generator.is_available():
@@ -231,16 +257,27 @@ Return only the terms, separated by commas."""
                     if (term and len(term) > 2 and term != query.lower()):
                         valid_terms.append(term)
                 
-                return [query] + valid_terms[:5]  # Limit to 5 additional terms
+                result = [query] + valid_terms[:5]  # Limit to 5 additional terms
+                
+                # Cache the successful result
+                cache_manager.set_query_expansion(query, "llm_expansion", result)
+                
+                return result
                 
         except Exception as e:
             logger.warning(f"LLM query expansion failed: {e}")
         
         # Fallback to synonym expansion
         if fallback_to_synonyms:
-            return self.expand_synonyms(query)
+            result = self.expand_synonyms(query)
+            # Cache fallback result with different key to avoid confusion
+            cache_manager.set_query_expansion(query, "llm_expansion_fallback", result)
+            return result
         
-        return [query]
+        # Cache the single query result
+        result = [query]
+        cache_manager.set_query_expansion(query, "llm_expansion_single", result)
+        return result
 
 
 class QueryContext:

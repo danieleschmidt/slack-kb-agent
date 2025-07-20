@@ -348,7 +348,10 @@ class AuthMiddleware:
     
     def _authenticate_api_key(self, headers: Dict[str, str]) -> AuthResult:
         """Authenticate using API key."""
-        api_key = headers.get("X-API-Key", "")
+        # Try different case variations of the API key header
+        api_key = (headers.get("X-API-Key", "") or 
+                  headers.get("X-Api-Key", "") or
+                  headers.get("x-api-key", ""))
         
         if not api_key:
             return AuthResult(

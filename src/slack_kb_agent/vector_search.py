@@ -18,6 +18,7 @@ except ImportError:
     SentenceTransformer = None
 
 from .models import Document
+from .cache import get_cache_manager
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class VectorSearchEngine:
                 self.model = SentenceTransformer(self.model_name)
     
     def generate_embedding(self, text: str) -> np.ndarray:
-        """Generate vector embedding for text.
+        """Generate vector embedding for text with caching.
         
         Args:
             text: Input text to embed
@@ -73,9 +74,21 @@ class VectorSearchEngine:
             embedding_dim = self.model.get_sentence_embedding_dimension()
             return np.zeros(embedding_dim, dtype=np.float32)
         
+        # Try to get from cache first
+        cache_manager = get_cache_manager()
+        cached_embedding = cache_manager.get_embedding(text, self.model_name)
+        if cached_embedding is not None:
+            return cached_embedding
+        
+        # Generate new embedding
         self._ensure_model_loaded()
         embedding = self.model.encode([text], normalize_embeddings=True)[0]
-        return embedding.astype(np.float32)
+        embedding = embedding.astype(np.float32)
+        
+        # Cache the result
+        cache_manager.set_embedding(text, self.model_name, embedding)
+        
+        return embedding
     
     def build_index(self, documents: List[Document]) -> None:
         """Build FAISS index from documents.
@@ -117,7 +130,7 @@ class VectorSearchEngine:
         top_k: int = 10,
         threshold: Optional[float] = None
     ) -> List[Tuple[Document, float]]:
-        """Search for similar documents using vector similarity.
+        """Search for similar documents using vector similarity with caching.
         
         Args:
             query: Search query text
@@ -136,6 +149,33 @@ class VectorSearchEngine:
         
         threshold = threshold if threshold is not None else self.similarity_threshold
         
+        # Generate cache key for search parameters
+        cache_manager = get_cache_manager()
+        search_params = {
+            "model_name": self.model_name,
+            "top_k": top_k,
+            "threshold": threshold,
+            "num_documents": len(self.documents)
+        }
+        cache_key = cache_manager.generate_search_hash(query, search_params)
+        
+        # Try to get results from cache
+        cached_results = cache_manager.get_search_results(cache_key)
+        if cached_results is not None:
+            # Convert cached results back to Document objects
+            results = []
+            for result_data in cached_results:
+                doc_data = result_data["document"]
+                score = result_data["score"]
+                # Reconstruct Document object
+                document = Document(
+                    content=doc_data["content"],
+                    source=doc_data["source"],
+                    metadata=doc_data.get("metadata", {})
+                )
+                results.append((document, score))
+            return results
+        
         # Generate query embedding
         query_embedding = self.generate_embedding(query)
         query_vector = query_embedding.reshape(1, -1)
@@ -148,6 +188,21 @@ class VectorSearchEngine:
         for score, idx in zip(scores[0], indices[0]):
             if score >= threshold:
                 results.append((self.documents[idx], float(score)))
+        
+        # Cache the results
+        if results:
+            cached_data = []
+            for document, score in results:
+                doc_dict = {
+                    "content": document.content,
+                    "source": document.source,
+                    "metadata": document.metadata
+                }
+                cached_data.append({
+                    "document": doc_dict,
+                    "score": score
+                })
+            cache_manager.set_search_results(cache_key, cached_data)
         
         return results
     
