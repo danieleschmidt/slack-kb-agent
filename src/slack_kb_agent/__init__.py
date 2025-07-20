@@ -37,6 +37,9 @@ from .real_time import RealTimeUpdater
 from .smart_routing import RoutingEngine, TeamMember, load_team_profiles
 from .escalation import SlackNotifier
 from .analytics import UsageAnalytics
+from .auth import AuthConfig, AuthMiddleware, get_auth_middleware
+from .validation import InputValidator, ValidationConfig, sanitize_query, validate_slack_input
+from .rate_limiting import RateLimiter, RateLimitConfig, UserRateLimiter, get_rate_limiter, get_user_rate_limiter
 from . import cli
 
 __all__ = [
@@ -75,5 +78,17 @@ __all__ = [
     "load_team_profiles",
     "SlackNotifier",
     "UsageAnalytics",
+    "AuthConfig",
+    "AuthMiddleware", 
+    "get_auth_middleware",
+    "InputValidator",
+    "ValidationConfig",
+    "sanitize_query",
+    "validate_slack_input",
+    "RateLimiter",
+    "RateLimitConfig", 
+    "UserRateLimiter",
+    "get_rate_limiter",
+    "get_user_rate_limiter",
     "cli",
 ]

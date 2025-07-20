@@ -11,6 +11,8 @@ from .knowledge_base import KnowledgeBase
 from .models import Document
 from .analytics import UsageAnalytics
 from .query_processor import QueryProcessor
+from .validation import validate_slack_input, sanitize_query, get_validator
+from .rate_limiting import get_user_rate_limiter, RateLimitResult
 
 logger = logging.getLogger(__name__)
 
@@ -123,11 +125,19 @@ class SlackBotServer:
                 user_id = command.get("user_id")
                 channel_id = command.get("channel_id")
                 
+                # Check rate limiting for slash commands
+                rate_limiter = get_user_rate_limiter()
+                rate_result = rate_limiter.check_user_rate_limit(user_id, query)
+                if not rate_result.allowed:
+                    logger.warning(f"Slash command rate limit exceeded for user {user_id}: {rate_result.error_message}")
+                    say(f"⏰ {rate_result.error_message}")
+                    return
+                
                 if not query:
                     say(self._get_help_text())
                     return
                 
-                # Process special commands
+                # Process special commands (these are safe)
                 if query.lower() in ["help", "--help", "-h"]:
                     say(self._get_help_text())
                     return
@@ -135,9 +145,20 @@ class SlackBotServer:
                     say(self._get_stats_text())
                     return
                 
+                # Sanitize and validate the query for search
+                sanitized_query = sanitize_query(query)
+                if not sanitized_query:
+                    logger.warning(f"Dangerous slash command query blocked from user {user_id}: {query}")
+                    say("Sorry, I can't process that request. Please try a different search query.")
+                    return
+                
+                # Log if query was modified during sanitization
+                if sanitized_query != query:
+                    logger.info(f"Slash command query sanitized for user {user_id}: '{query}' -> '{sanitized_query}'")
+                
                 # Process search query
-                results = self.process_query(query, user_id, channel_id)
-                response = self.format_response(results, query)
+                results = self.process_query(sanitized_query, user_id, channel_id)
+                response = self.format_response(results, sanitized_query)
                 say(response)
                 
             except Exception as e:
@@ -146,8 +167,24 @@ class SlackBotServer:
     
     def _handle_query_event(self, event: Dict[str, Any], say, client, is_mention: bool) -> None:
         """Handle query events from mentions or DMs."""
-        text = event.get("text", "")
         user_id = event.get("user")
+        
+        # Check rate limiting first
+        rate_limiter = get_user_rate_limiter()
+        rate_result = rate_limiter.check_user_rate_limit(user_id, event.get("text", ""))
+        if not rate_result.allowed:
+            logger.warning(f"Rate limit exceeded for user {user_id}: {rate_result.error_message}")
+            say(f"⏰ {rate_result.error_message}")
+            return
+        
+        # Validate Slack input
+        validation_result = validate_slack_input(event)
+        if not validation_result.is_valid:
+            logger.warning(f"Invalid Slack input from user {user_id}: {validation_result.error_message}")
+            say("Sorry, I couldn't process your request. Please try rephrasing your question.")
+            return
+        
+        text = event.get("text", "")
         channel_id = event.get("channel")
         
         # Extract query from mention (remove bot mention)
@@ -162,9 +199,20 @@ class SlackBotServer:
             say(self._get_help_text())
             return
         
-        # Process the query
-        results = self.process_query(query, user_id, channel_id)
-        response = self.format_response(results, query)
+        # Sanitize and validate the query
+        sanitized_query = sanitize_query(query)
+        if not sanitized_query:
+            logger.warning(f"Dangerous query blocked from user {user_id}: {query}")
+            say("Sorry, I can't process that request. Please try a different question.")
+            return
+        
+        # Log if query was modified during sanitization
+        if sanitized_query != query:
+            logger.info(f"Query sanitized for user {user_id}: '{query}' -> '{sanitized_query}'")
+        
+        # Process the sanitized query
+        results = self.process_query(sanitized_query, user_id, channel_id)
+        response = self.format_response(results, sanitized_query)
         say(response)
     
     def process_query(

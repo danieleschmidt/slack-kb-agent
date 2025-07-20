@@ -197,7 +197,7 @@ class GitHubIngester(BaseIngester):
         try:
             # Get issues (includes PRs)
             url = f"https://api.github.com/repos/{repo}/issues"
-            response = requests.get(url, headers=headers, params={"state": "all", "per_page": 100})
+            response = requests.get(url, headers=headers, params={"state": "all", "per_page": 100}, timeout=30)
             response.raise_for_status()
             
             for issue in response.json():
@@ -238,7 +238,7 @@ class GitHubIngester(BaseIngester):
         
         try:
             url = f"https://api.github.com/repos/{repo}/readme"
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=30)
             
             if response.status_code == 200:
                 readme_data = response.json()
@@ -246,7 +246,7 @@ class GitHubIngester(BaseIngester):
                 # Get the actual content
                 content_url = readme_data.get("download_url")
                 if content_url:
-                    content_response = requests.get(content_url)
+                    content_response = requests.get(content_url, timeout=30)
                     content_response.raise_for_status()
                     
                     content = content_response.text
