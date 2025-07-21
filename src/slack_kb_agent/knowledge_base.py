@@ -12,6 +12,7 @@ from .models import Document
 from .sources import BaseSource
 from .vector_search import VectorSearchEngine, is_vector_search_available
 from .cache import get_cache_manager
+from .search_index import SearchEngine
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +33,17 @@ class KnowledgeBase:
         enable_vector_search: bool = True,
         vector_model: str = "all-MiniLM-L6-v2",
         similarity_threshold: float = 0.5,
-        max_documents: Optional[int] = None
+        max_documents: Optional[int] = None,
+        enable_indexed_search: bool = True
     ) -> None:
         self.sources: List[BaseSource] = []
         self.documents: List[Document] = []
         self.max_documents = max_documents
         self.enable_vector_search = enable_vector_search and is_vector_search_available()
+        self.enable_indexed_search = enable_indexed_search
+        
+        # Initialize search engine
+        self.search_engine = SearchEngine(enable_indexing=enable_indexed_search)
         
         if self.enable_vector_search:
             try:
@@ -74,6 +80,10 @@ class KnowledgeBase:
         self.documents.append(document)
         self._enforce_document_limit()
         self._update_memory_metrics()
+        
+        # Add to search engine
+        self.search_engine.add_document(document)
+        
         if self.enable_vector_search and self.vector_engine:
             self.vector_engine.add_document(document)
         
@@ -88,6 +98,10 @@ class KnowledgeBase:
         self.documents.extend(documents)
         self._enforce_document_limit()
         self._update_memory_metrics()
+        
+        # Add to search engine
+        self.search_engine.add_documents(documents)
+        
         self._rebuild_vector_index()
         
         # Invalidate search cache when documents are added
@@ -103,8 +117,8 @@ class KnowledgeBase:
 
     def search(self, query: str) -> List[Document]:
         """Return documents containing the query string (keyword search)."""
-        q = query.lower()
-        return [doc for doc in self.documents if q in doc.content.lower()]
+        # Use indexed search engine for better performance
+        return self.search_engine.search(query)
     
     def search_semantic(
         self, 
@@ -210,6 +224,10 @@ class KnowledgeBase:
         # Update memory metrics
         self._update_memory_metrics()
         
+        # Rebuild search engine index after document eviction
+        self.search_engine.clear()
+        self.search_engine.add_documents(self.documents)
+        
         # If vector search is enabled, we need to rebuild the index since we can't 
         # selectively remove documents from FAISS index
         if self.enable_vector_search and self.vector_engine and removed_docs:
@@ -259,6 +277,10 @@ class KnowledgeBase:
                             for doc in self.documents)
         stats["estimated_memory_bytes"] = estimated_bytes
         stats["estimated_memory_mb"] = estimated_bytes / (1024 * 1024)
+        
+        # Add search engine statistics
+        search_stats = self.search_engine.get_stats()
+        stats.update({f"search_{k}": v for k, v in search_stats.items()})
         
         return stats
 

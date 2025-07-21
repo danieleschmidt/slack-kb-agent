@@ -1,17 +1,18 @@
 # Slack-KB-Agent
 
-Current version: 1.7.0
+Current version: 1.7.1
 
 Intelligent Slack bot that answers team questions by indexing and searching across documentation, GitHub issues, code comments, and conversation history.
 
 ## Features
 
 - **Multi-Source Knowledge Base**: Indexes docs, GitHub issues, code repositories, and Slack history
-- **Vector-Based Semantic Search**: Advanced similarity search using sentence transformers and FAISS
-  - Understands intent beyond exact keyword matches
-  - Configurable similarity thresholds  
-  - Hybrid search combining semantic and keyword approaches
-  - Automatic fallback to keyword search when vector dependencies unavailable
+- **Advanced Search Engine**: High-performance search with multiple approaches
+  - **Indexed Search**: Inverted index with TF-IDF scoring for fast keyword search
+  - **Vector-Based Semantic Search**: Advanced similarity search using sentence transformers and FAISS
+  - **Hybrid Search**: Combines semantic and keyword approaches with configurable weights
+  - Understands intent beyond exact keyword matches with configurable similarity thresholds
+  - Automatic fallback to optimized keyword search when vector dependencies unavailable
 - **Contextual Q&A**: Understands team-specific terminology and project context
 - **Real-time Learning**: Continuously updates knowledge base from ongoing conversations
 - **Smart Routing**: Escalates complex questions to appropriate team members
@@ -152,7 +153,7 @@ GITHUB_TOKEN=ghp_your-github-token
 GITHUB_ORGS=your-org1,your-org2
 
 # PostgreSQL Database (for persistent storage)
-DATABASE_URL=postgresql://postgres:password@localhost:5432/slack_kb_agent
+DATABASE_URL=postgresql://username:password@localhost:5432/slack_kb_agent
 
 # Redis Cache
 REDIS_URL=redis://localhost:6379/0
@@ -245,7 +246,7 @@ sudo apt-get install postgresql postgresql-contrib
 sudo -u postgres createdb slack_kb_agent
 
 # Set database URL
-export DATABASE_URL="postgresql://postgres:password@localhost:5432/slack_kb_agent"
+export DATABASE_URL="postgresql://username:password@localhost:5432/slack_kb_agent"
 ```
 
 ## Architecture

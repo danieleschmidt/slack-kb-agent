@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.7.1 - 2025-07-21
+
+- fix(security): remove hard-coded database credentials from all configuration files
+- fix(security): require DATABASE_URL environment variable with helpful error messages
+- feat(search): implement high-performance inverted index search engine with TF-IDF scoring
+- feat(search): replace O(n) linear search with O(log n) indexed search for massive performance improvement
+- feat(search): add search result caching with LRU eviction for frequently accessed queries
+- feat(search): implement phrase matching bonuses and relevance scoring
+- feat(search): add comprehensive search statistics and performance monitoring
+- feat(search): maintain backward compatibility with existing search API
+- tests: add comprehensive test suite for indexed search functionality and performance
+- tests: add security tests to prevent regression of hard-coded credentials
+- docs: update README with enhanced search capabilities and security best practices
+
 ## v1.7.0 - 2025-07-21
 
 - feat(database): implement comprehensive PostgreSQL database persistence with SQLAlchemy
