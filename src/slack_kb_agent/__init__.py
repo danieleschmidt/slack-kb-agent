@@ -1,6 +1,6 @@
 """Slack Knowledge Base Agent package."""
 
-__version__ = "1.6.0"
+__version__ = "1.7.2"
 
 from .utils import add
 from .models import Document
@@ -38,7 +38,8 @@ from .real_time import RealTimeUpdater
 from .smart_routing import RoutingEngine, TeamMember, load_team_profiles
 from .escalation import SlackNotifier
 from .analytics import UsageAnalytics
-from .auth import AuthConfig, AuthMiddleware, get_auth_middleware
+from .auth import AuthConfig, AuthMiddleware, BasicAuthenticator, get_auth_middleware
+from .password_hash import PasswordHasher
 from .validation import InputValidator, ValidationConfig, sanitize_query, validate_slack_input
 from .rate_limiting import RateLimiter, RateLimitConfig, UserRateLimiter, get_rate_limiter, get_user_rate_limiter
 from .llm import LLMConfig, ResponseGenerator, LLMResponse, get_response_generator
@@ -83,6 +84,8 @@ __all__ = [
     "UsageAnalytics",
     "AuthConfig",
     "AuthMiddleware", 
+    "BasicAuthenticator",
+    "PasswordHasher",
     "get_auth_middleware",
     "InputValidator",
     "ValidationConfig",

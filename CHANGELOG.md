@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.7.2 - 2025-07-21
+
+- fix(security): implement secure bcrypt password hashing to replace plaintext password storage
+- fix(security): add automatic migration of existing plaintext passwords to secure hashes
+- feat(auth): create PasswordHasher class with configurable cost parameters and timing-safe verification
+- feat(auth): add BasicAuthenticator class with integrated password hashing and validation
+- feat(auth): implement salt randomness and timing attack resistance
+- feat(security): add comprehensive password validation with special character and long password support
+- tests: add extensive test coverage for password hashing security properties and edge cases
+- tests: verify timing attack resistance and salt randomness properties
+- deps: add bcrypt>=4.0.0 dependency for cryptographically secure password hashing
+- docs: update authentication documentation with security best practices
+
 ## v1.7.1 - 2025-07-21
 
 - fix(security): remove hard-coded database credentials from all configuration files
