@@ -13,6 +13,8 @@ import base64
 import logging
 import time
 from typing import Dict, List, Optional, NamedTuple
+
+from .password_hash import PasswordHasher, is_bcrypt_hash
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
@@ -238,6 +240,46 @@ class AuditLogger:
         self.logger.warning(f"Rate limit exceeded: {event}")
 
 
+class BasicAuthenticator:
+    """Basic authentication handler with secure password hashing."""
+    
+    def __init__(self, config: AuthConfig):
+        self.config = config
+        self.password_hasher = PasswordHasher()
+        
+        # Store users with hashed passwords
+        self.users: Dict[str, str] = {}
+        self.default_password_hash: Optional[str] = None
+        
+        # Hash and store user passwords
+        if config.basic_auth_users:
+            for username, password in config.basic_auth_users.items():
+                if is_bcrypt_hash(password):
+                    self.users[username] = password
+                else:
+                    self.users[username] = self.password_hasher.hash_password(password)
+        
+        # Handle default password (used for 'admin' user)
+        default_password = getattr(config, 'basic_password', None)
+        if default_password:
+            if is_bcrypt_hash(default_password):
+                self.default_password_hash = default_password
+            else:
+                self.default_password_hash = self.password_hasher.hash_password(default_password)
+    
+    def verify_basic_auth(self, username: str, password: str) -> bool:
+        """Verify basic authentication credentials."""
+        # Check named users
+        if username in self.users:
+            return self.password_hasher.verify_password(password, self.users[username])
+        
+        # Check default password for 'admin' user
+        if username == "admin" and self.default_password_hash:
+            return self.password_hasher.verify_password(password, self.default_password_hash)
+        
+        return False
+
+
 class AuthMiddleware:
     """Authentication middleware for HTTP requests."""
     
@@ -245,6 +287,12 @@ class AuthMiddleware:
         self.config = config
         self.rate_limiter = RateLimiter(config.rate_limit_requests, config.rate_limit_window)
         self.audit_logger = AuditLogger(config.audit_enabled)
+        
+        # Initialize password hasher
+        self.password_hasher = PasswordHasher()
+        
+        # Hash any plaintext passwords for security
+        self._hash_plaintext_passwords()
     
     def authenticate_request(self, 
                            path: str, 
@@ -368,10 +416,18 @@ class AuthMiddleware:
         )
     
     def _verify_password(self, provided: str, stored: str) -> bool:
-        """Verify password with timing-safe comparison."""
-        # For production, passwords should be hashed
-        # This is a simple implementation for the MVP
-        return hmac.compare_digest(provided, stored)
+        """Verify password against hash using secure comparison."""
+        return self.password_hasher.verify_password(provided, stored)
+    
+    def _hash_plaintext_passwords(self) -> None:
+        """Hash any plaintext passwords in the configuration."""
+        # Hash basic_auth_users passwords if they aren't already hashed
+        if self.config.basic_auth_users:
+            for username, password in list(self.config.basic_auth_users.items()):
+                if not is_bcrypt_hash(password):
+                    hashed = self.password_hasher.hash_password(password)
+                    self.config.basic_auth_users[username] = hashed
+                    logger.info(f"Migrated plaintext password to secure hash for user: {username}")
 
 
 def create_default_auth_config() -> AuthConfig:
