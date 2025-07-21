@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slack_kb_agent"
-version = "1.6.4"
+version = "1.7.0"
 dependencies = [
     "sentence-transformers>=2.2.0",
     "faiss-cpu>=1.7.0",
@@ -18,6 +18,9 @@ dependencies = [
     "gitpython>=3.1.0",
     "psutil>=5.9.0",
     "redis>=4.5.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.0",
+    "alembic>=1.12.0",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +31,7 @@ llm = [
 
 [project.scripts]
 slack-kb-agent = "slack_kb_agent.cli:main"
+slack-kb-db = "slack_kb_agent.db_cli:main"
 requires-python = ">=3.8"
 
 [tool.setuptools]

@@ -1,6 +1,6 @@
 # Slack-KB-Agent
 
-Current version: 1.6.0
+Current version: 1.7.0
 
 Intelligent Slack bot that answers team questions by indexing and searching across documentation, GitHub issues, code comments, and conversation history.
 
@@ -151,7 +151,13 @@ SLACK_APP_TOKEN=xapp-your-app-token
 GITHUB_TOKEN=ghp_your-github-token
 GITHUB_ORGS=your-org1,your-org2
 
-# Vector Database
+# PostgreSQL Database (for persistent storage)
+DATABASE_URL=postgresql://postgres:password@localhost:5432/slack_kb_agent
+
+# Redis Cache
+REDIS_URL=redis://localhost:6379/0
+
+# Vector Database (optional)
 PINECONE_API_KEY=your-pinecone-key
 PINECONE_ENVIRONMENT=us-east1-gcp
 
@@ -198,6 +204,50 @@ permissions:
   public_channels: ["general", "random"]
 ```
 
+## Database & Persistence
+
+The system supports both PostgreSQL database persistence and JSON file storage:
+
+### PostgreSQL Database
+- **Production-ready**: ACID compliance, concurrent access, connection pooling
+- **Scalable**: Handle large knowledge bases with efficient indexing
+- **Backup/Restore**: Built-in backup and restore functionality
+- **Migration**: Alembic-based schema migrations
+
+### Database Management
+```bash
+# Initialize database schema
+slack-kb-db init
+
+# Check database status
+slack-kb-db check
+
+# Create backup
+slack-kb-db backup /path/to/backup.json.gz
+
+# Restore from backup
+slack-kb-db restore /path/to/backup.json.gz --clear
+
+# Migrate JSON file to database
+slack-kb-db migrate /path/to/knowledge_base.json
+
+# Export database to JSON
+slack-kb-db export /path/to/export.json
+
+# Validate backup file
+slack-kb-db validate /path/to/backup.json.gz
+```
+
+### Environment Setup
+```bash
+# PostgreSQL (required for database persistence)
+sudo apt-get install postgresql postgresql-contrib
+sudo -u postgres createdb slack_kb_agent
+
+# Set database URL
+export DATABASE_URL="postgresql://postgres:password@localhost:5432/slack_kb_agent"
+```
+
 ## Architecture
 
 ```
@@ -206,6 +256,9 @@ Slack Events → Message Processor → Query Understanding → Knowledge Retriev
               Intent Classification    Vector Search      Context Assembly    Answer Synthesis
                     ↓                      ↓                    ↓                      ↓
               Knowledge Router        Multiple Sources    Citation Tracking    Quality Check
+                                           ↓
+                                  PostgreSQL Database
+                                  (Persistent Storage)
 ```
 
 ## Knowledge Sources
