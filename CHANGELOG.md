@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.7.0 - 2025-07-21
+
+- feat(database): implement comprehensive PostgreSQL database persistence with SQLAlchemy
+- feat(database): add production-ready connection pooling and environment-based configuration
+- feat(database): create Alembic-based schema migrations with version control
+- feat(database): implement enhanced PersistentKnowledgeBase with hybrid storage (database + in-memory)
+- feat(database): add lazy loading from database with automatic fallback to JSON persistence
+- feat(backup): implement comprehensive backup/restore system with compression and validation
+- feat(backup): add gzip compression support and JSON backup compatibility
+- feat(backup): create backup validation with detailed error reporting and metadata tracking
+- feat(cli): add database management CLI tool (`slack-kb-db`) for all database operations
+- feat(cli): support database initialization, backup, restore, migration, and status checking
+- feat(migrations): create initial database schema migration with proper indexing
+- feat(persistence): maintain backward compatibility with existing JSON file persistence
+- feat(monitoring): integrate database statistics into monitoring and health checks
+- tests: comprehensive test coverage for database, backup, and persistent knowledge base functionality
+- docs: update README with database setup, management commands, and architecture diagrams
+- deps: add SQLAlchemy, psycopg2-binary, and Alembic dependencies for PostgreSQL support
+
 ## v1.6.4 - 2025-07-20
 
 - feat(cache): implement comprehensive Redis-based caching layer for performance optimization
