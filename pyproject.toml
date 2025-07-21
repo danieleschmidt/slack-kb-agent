@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slack_kb_agent"
-version = "1.7.0"
+version = "1.7.1"
 dependencies = [
     "sentence-transformers>=2.2.0",
     "faiss-cpu>=1.7.0",

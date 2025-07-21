@@ -89,10 +89,12 @@ class DatabaseManager:
             pool_pre_ping: Validate connections before use
             echo: Enable SQL query logging
         """
-        self.database_url = database_url or os.getenv(
-            'DATABASE_URL',
-            'postgresql://postgres:password@localhost:5432/slack_kb_agent'
-        )
+        self.database_url = database_url or os.getenv('DATABASE_URL')
+        if not self.database_url:
+            raise ValueError(
+                "DATABASE_URL environment variable is required. "
+                "Example: postgresql://user:password@localhost:5432/dbname"
+            )
         
         # Create engine with connection pooling
         self.engine = create_engine(
