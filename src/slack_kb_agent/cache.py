@@ -133,8 +133,15 @@ class CacheManager:
             self._is_connected = False
             self._redis_client = None
             self._connection_pool = None
+        except MemoryError as e:
+            logger.warning(f"Failed to connect to Redis - insufficient memory: {e}. Caching disabled.")
+            self._is_connected = False
+            self._redis_client = None
+            self._connection_pool = None
         except Exception as e:
-            logger.warning(f"Failed to connect to Redis - unexpected error: {e}. Caching disabled.")
+            # Defensive catch-all for Redis connection - caching should never break the app
+            error_type = type(e).__name__
+            logger.warning(f"Failed to connect to Redis - unexpected {error_type}: {e}. Caching disabled.")
             self._is_connected = False
             self._redis_client = None
             self._connection_pool = None
@@ -167,10 +174,18 @@ class CacheManager:
             # Remove corrupted cache entry
             try:
                 self._redis_client.delete(key)
+            except (ConnectionError, TimeoutError) as delete_error:
+                logger.warning(f"Failed to delete corrupted cache entry {key} - connection issue: {delete_error}")
             except Exception as delete_error:
-                logger.warning(f"Failed to delete corrupted cache entry {key}: {delete_error}")
+                logger.warning(f"Failed to delete corrupted cache entry {key} - unexpected error: {delete_error}")
+        except (ConnectionError, TimeoutError) as e:
+            logger.warning(f"Failed to get embedding from cache - connection issue: {e}")
+        except MemoryError as e:
+            logger.warning(f"Failed to get embedding from cache - memory issue: {e}")
         except Exception as e:
-            logger.warning(f"Failed to get embedding from cache: {e}")
+            # Defensive catch-all - cache failures should never break the application
+            error_type = type(e).__name__
+            logger.warning(f"Failed to get embedding from cache - unexpected {error_type}: {e}")
         
         return None
     
@@ -186,8 +201,14 @@ class CacheManager:
             logger.debug(f"Cached embedding for: {text[:50]}...")
         except (TypeError, ValueError) as e:
             logger.warning(f"Failed to serialize embedding: {e}")
+        except (ConnectionError, TimeoutError) as e:
+            logger.warning(f"Failed to cache embedding - connection issue: {e}")
+        except MemoryError as e:
+            logger.warning(f"Failed to cache embedding - memory issue: {e}")
         except Exception as e:
-            logger.warning(f"Failed to cache embedding: {e}")
+            # Defensive catch-all - cache failures should never break the application
+            error_type = type(e).__name__
+            logger.warning(f"Failed to cache embedding - unexpected {error_type}: {e}")
     
     def get_query_expansion(self, query: str, expansion_type: str) -> Optional[List[str]]:
         """Get cached query expansion."""
