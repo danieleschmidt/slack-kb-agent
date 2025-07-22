@@ -39,7 +39,7 @@ from slack_kb_agent import (
 )
 
 
-def setup_logging():
+def setup_logging() -> None:
     """Configure logging for the bot."""
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
@@ -89,7 +89,7 @@ def load_analytics() -> UsageAnalytics:
     return analytics
 
 
-def check_environment():
+def check_environment() -> bool:
     """Check that required environment variables are set."""
     required_vars = [
         "SLACK_BOT_TOKEN",
@@ -110,7 +110,7 @@ def check_environment():
     return True
 
 
-def main():
+def main() -> None:
     """Main entry point for the bot server."""
     print("🤖 Slack Knowledge Base Bot")
     print("=" * 40)

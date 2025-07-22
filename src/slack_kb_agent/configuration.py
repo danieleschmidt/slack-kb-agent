@@ -180,7 +180,7 @@ def get_vector_search_config() -> VectorSearchConfig:
     return _vector_search_config
 
 
-def reset_config_cache():
+def reset_config_cache() -> None:
     """Reset configuration cache. Useful for testing."""
     global _app_config, _search_config, _slack_bot_config, _vector_search_config
     _app_config = None
