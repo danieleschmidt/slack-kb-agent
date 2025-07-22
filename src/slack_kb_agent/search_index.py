@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import re
 import logging
+import time
 from typing import Dict, List, Set, Optional
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
 
 from .models import Document
@@ -44,6 +45,12 @@ class InvertedIndex:
         
         # document index -> document content (for scoring)
         self.document_content: List[str] = []
+        
+        # Term usage tracking for LRU eviction (term -> last_access_time)
+        self._term_access_times: Dict[str, float] = {}
+        
+        # Term frequency tracking (term -> frequency_count)
+        self._term_frequencies: Dict[str, int] = defaultdict(int)
         
         # Statistics
         self.total_terms = 0
@@ -88,18 +95,70 @@ class InvertedIndex:
         # Add to inverted index
         terms = self._tokenize(content)
         
+        # First, identify new terms that need to be added
+        new_terms = [term for term in terms if term not in self.index]
+        
+        # Evict terms if we need space for new terms
+        while len(self.index) + len(new_terms) > self.max_index_size and len(new_terms) > 0:
+            if not self.index:  # Safety check - don't evict if index is empty
+                break
+            self._evict_least_valuable_term()
+            # Recalculate new_terms in case we evicted one of them
+            new_terms = [term for term in terms if term not in self.index]
+        
+        # Now add all terms
         for term in terms:
-            # Check if we're approaching memory limits
-            if len(self.index) >= self.max_index_size and term not in self.index:
-                if not self._index_full:
-                    logger.warning(f"Search index reached maximum size ({self.max_index_size} terms)")
-                    self._index_full = True
-                continue
+            # Update term frequency
+            self._term_frequencies[term] += 1
             
+            # Add term to index and update access time
             self.index[term].add(doc_index)
+            self._term_access_times[term] = time.time()
             self.total_terms += 1
         
         return doc_index
+    
+    def _evict_least_valuable_term(self) -> None:
+        """Evict the least valuable term from the index.
+        
+        Uses a combination of LRU (Least Recently Used) and frequency-based eviction.
+        Terms with lower access times and lower frequencies are evicted first.
+        """
+        if not self.index:
+            return
+        
+        # Find the least valuable term using LRU with frequency weighting
+        min_score = float('inf')
+        term_to_evict = None
+        current_time = time.time()
+        
+        for term in self.index:
+            # Get access time (default to very old if not tracked)
+            last_access = self._term_access_times.get(term, 0)
+            time_since_access = current_time - last_access
+            
+            # Get frequency (default to 1 if not tracked)
+            frequency = self._term_frequencies.get(term, 1)
+            
+            # Calculate score: higher time_since_access and lower frequency = lower score
+            # Terms with lower scores will be evicted first
+            score = frequency / (time_since_access + 1)  # +1 to avoid division by zero
+            
+            if score < min_score:
+                min_score = score
+                term_to_evict = term
+        
+        # Evict the least valuable term
+        if term_to_evict:
+            # Remove from main index
+            del self.index[term_to_evict]
+            
+            # Clean up tracking data
+            self._term_access_times.pop(term_to_evict, None)
+            self._term_frequencies.pop(term_to_evict, None)
+            
+            # Update statistics
+            self._index_full = True
     
     def remove_document(self, doc_index: int) -> bool:
         """Remove a document from the index.
@@ -168,6 +227,8 @@ class InvertedIndex:
             if term in self.index:
                 candidate_docs.update(self.index[term])
                 term_counts[term] = len(self.index[term])
+                # Update access time for LRU tracking
+                self._term_access_times[term] = time.time()
         
         if not candidate_docs:
             return []
@@ -234,6 +295,24 @@ class InvertedIndex:
             score = score / len(query_terms)
         
         return score, matched_terms
+    
+    def get_size_stats(self) -> Dict[str, any]:
+        """Get index size statistics for monitoring.
+        
+        Returns:
+            Dictionary with size and memory usage statistics
+        """
+        total_terms = len(self.index)
+        max_terms = self.max_index_size
+        memory_usage_percent = (total_terms / max_terms * 100) if max_terms > 0 else 0
+        
+        return {
+            "total_terms": total_terms,
+            "max_terms": max_terms,
+            "memory_usage_percent": memory_usage_percent,
+            "index_full": self._index_full,
+            "terms_evicted": self._index_full
+        }
     
     def get_stats(self) -> Dict[str, int]:
         """Get index statistics.

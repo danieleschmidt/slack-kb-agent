@@ -39,7 +39,7 @@ from slack_kb_agent import (
 )
 
 
-def setup_logging():
+def setup_logging() -> None:
     """Configure logging for the bot."""
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
@@ -89,7 +89,7 @@ def load_analytics() -> UsageAnalytics:
     return analytics
 
 
-def check_environment():
+def check_environment() -> bool:
     """Check that required environment variables are set."""
     required_vars = [
         "SLACK_BOT_TOKEN",
@@ -110,7 +110,7 @@ def check_environment():
     return True
 
 
-def main():
+def main() -> None:
     """Main entry point for the bot server."""
     print("🤖 Slack Knowledge Base Bot")
     print("=" * 40)
@@ -127,11 +127,11 @@ def main():
     if not is_slack_bot_available():
         print("❌ Slack bot dependencies not available.")
         print("Install with: pip install slack-bolt slack-sdk")
-        sys.exit(1)
+        raise SystemExit(1)
     
     # Check environment
     if not check_environment():
-        sys.exit(1)
+        raise SystemExit(1)
     
     try:
         # Load knowledge base and analytics
@@ -167,7 +167,7 @@ def main():
     except Exception as e:
         print(f"❌ Error starting bot server: {e}")
         logger.error(f"Failed to start bot server: {e}")
-        sys.exit(1)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
