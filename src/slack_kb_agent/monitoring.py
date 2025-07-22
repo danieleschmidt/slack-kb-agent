@@ -206,17 +206,34 @@ class MetricsCollector:
                 else:
                     self.set_gauge("cache_available", 0)
                     
-            except Exception as e:
-                # Don't let cache metrics crash the monitoring
+            except (ImportError, AttributeError) as e:
+                # Cache module may not be available or properly configured
                 self.set_gauge("cache_available", 0)
-                logger.debug(f"Cache metrics collection failed: {e}")
+                logger.debug(f"Cache metrics unavailable: {type(e).__name__}: {e}")
+            except MetricsCollectionError as e:
+                # Expected metrics collection error
+                self.set_gauge("cache_available", 0)
+                logger.warning(f"Cache metrics collection failed: {e}")
+            except Exception as e:
+                # Unexpected error - log for investigation
+                self.set_gauge("cache_available", 0)
+                logger.error(f"Unexpected error in cache metrics collection: {type(e).__name__}: {e}")
             
             # Application-specific memory metrics would be collected by the components themselves
             # This is called periodically to update memory-related gauges
             
+        except (OSError, AttributeError) as e:
+            # System resource access errors
+            logger.warning(f"System resource error in memory metrics collection: {type(e).__name__}: {e}")
+            self.increment_counter("metrics_collection_errors_total")
+            self.increment_counter("memory_metrics_system_errors_total")
+        except MetricsCollectionError as e:
+            # Expected metrics collection error
+            logger.warning(f"Memory metrics collection failed: {e}")
+            self.increment_counter("metrics_collection_errors_total")
         except Exception as e:
-            # Log unexpected errors in metrics collection
-            logger.error(f"Unexpected error in memory metrics collection: {e}")
+            # Unexpected error - log for investigation
+            logger.error(f"Unexpected error in memory metrics collection: {type(e).__name__}: {e}")
             self.increment_counter("metrics_collection_errors_total")
             self.increment_counter("memory_metrics_unexpected_errors_total")
             # Don't let metrics collection crash the application
@@ -266,9 +283,13 @@ class HealthChecker:
             # Log specific system resource errors
             logger.warning(f"Failed to check memory usage: {e}")
             return "unknown"  # Indicate we couldn't check
+        except SystemResourceError as e:
+            # Expected system resource error
+            logger.warning(f"Memory health check failed: {e}")
+            return "unknown"
         except Exception as e:
-            # Log unexpected errors
-            logger.error(f"Unexpected error checking memory: {e}")
+            # Unexpected error - log for investigation
+            logger.error(f"Unexpected error checking memory health: {type(e).__name__}: {e}")
             return "unknown"
     
     def check_disk_space(self) -> str:
@@ -290,9 +311,13 @@ class HealthChecker:
             # Log specific system resource errors
             logger.warning(f"Failed to check disk space: {e}")
             return "unknown"
+        except SystemResourceError as e:
+            # Expected system resource error
+            logger.warning(f"Disk space health check failed: {e}")
+            return "unknown"
         except Exception as e:
-            # Log unexpected errors
-            logger.error(f"Unexpected error checking disk space: {e}")
+            # Unexpected error - log for investigation
+            logger.error(f"Unexpected error checking disk space: {type(e).__name__}: {e}")
             return "unknown"
     
     def check_knowledge_base(self, kb) -> str:
@@ -319,9 +344,13 @@ class HealthChecker:
             # Log specific knowledge base errors
             logger.error(f"Knowledge base health check failed - invalid KB structure: {e}")
             return "critical"
+        except KnowledgeBaseHealthError as e:
+            # Expected knowledge base health error
+            logger.warning(f"Knowledge base health check failed: {e}")
+            return "critical"
         except Exception as e:
-            # Log unexpected errors
-            logger.error(f"Unexpected error checking knowledge base health: {e}")
+            # Unexpected error - log for investigation
+            logger.error(f"Unexpected error checking knowledge base health: {type(e).__name__}: {e}")
             return "critical"
     
     def get_health_status(self, kb=None) -> Dict[str, Any]:

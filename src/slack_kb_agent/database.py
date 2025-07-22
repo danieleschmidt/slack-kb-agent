@@ -23,7 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, OperationalError, DatabaseError, IntegrityError
 
 from .models import Document
 
@@ -135,8 +135,11 @@ class DatabaseManager:
             with self.get_session() as session:
                 session.execute('SELECT 1')
                 return True
-        except Exception as e:
-            logger.warning(f"Database not available: {e}")
+        except (OperationalError, DatabaseError) as e:
+            logger.warning(f"Database connection failed: {type(e).__name__}: {e}")
+            return False
+        except SQLAlchemyError as e:
+            logger.error(f"Unexpected database error during availability check: {type(e).__name__}: {e}")
             return False
     
     @contextmanager
@@ -146,8 +149,10 @@ class DatabaseManager:
         try:
             yield session
             session.commit()
-        except Exception:
+        except (SQLAlchemyError, Exception) as e:
             session.rollback()
+            if isinstance(e, SQLAlchemyError):
+                logger.error(f"Database operation failed: {type(e).__name__}: {e}")
             raise
         finally:
             session.close()
@@ -299,8 +304,10 @@ def get_database_manager() -> DatabaseManager:
         _db_manager = DatabaseManager()
         try:
             _db_manager.initialize()
-        except Exception as e:
-            logger.warning(f"Failed to initialize database: {e}")
+        except (OperationalError, DatabaseError) as e:
+            logger.warning(f"Database initialization failed: {type(e).__name__}: {e}")
+        except SQLAlchemyError as e:
+            logger.error(f"Unexpected database error during initialization: {type(e).__name__}: {e}")
     return _db_manager
 
 
@@ -316,5 +323,9 @@ def is_database_available() -> bool:
     """Check if database functionality is available."""
     try:
         return get_database_manager().is_available()
-    except Exception:
+    except (OperationalError, DatabaseError, SQLAlchemyError):
+        # Database errors are expected when DB is not available
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error checking database availability: {type(e).__name__}: {e}")
         return False
