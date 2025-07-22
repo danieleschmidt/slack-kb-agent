@@ -157,8 +157,8 @@ class CacheManager:
             # Remove corrupted cache entry
             try:
                 self._redis_client.delete(key)
-            except Exception:
-                pass
+            except Exception as delete_error:
+                logger.warning(f"Failed to delete corrupted cache entry {key}: {delete_error}")
         except Exception as e:
             logger.warning(f"Failed to get embedding from cache: {e}")
         

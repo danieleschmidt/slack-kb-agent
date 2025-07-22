@@ -237,7 +237,6 @@ class MetricsCollector:
             self.increment_counter("metrics_collection_errors_total")
             self.increment_counter("memory_metrics_unexpected_errors_total")
             # Don't let metrics collection crash the application
-            pass
     
     def get_metrics_snapshot(self) -> Dict[str, Any]:
         """Get a snapshot of all metrics."""

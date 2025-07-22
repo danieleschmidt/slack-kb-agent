@@ -636,9 +636,9 @@ class EnhancedQueryProcessor(QueryProcessor):
             total_history_entries = sum(len(ctx.history) for ctx in self.user_contexts.values())
             self.metrics.set_gauge("query_processor_total_history_entries", total_history_entries)
             
-        except Exception:
+        except Exception as e:
             # Don't let metrics collection crash the application
-            pass
+            logger.debug(f"Failed to update query processor metrics: {type(e).__name__}: {e}")
 
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get memory usage statistics for the query processor."""
