@@ -257,9 +257,9 @@ class KnowledgeBase:
             # Source count
             metrics.set_gauge("kb_sources_count", len(self.sources))
             
-        except Exception:
+        except Exception as e:
             # Don't let metrics collection crash the application
-            pass
+            logger.debug(f"Failed to update knowledge base metrics: {type(e).__name__}: {e}")
 
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get memory usage statistics for this knowledge base."""

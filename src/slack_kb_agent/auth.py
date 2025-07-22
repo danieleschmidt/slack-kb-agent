@@ -190,9 +190,12 @@ class RateLimiter:
             metrics.set_gauge("rate_limiter_total_requests", stats["total_requests"])
             metrics.set_gauge("rate_limiter_tracked_identifiers", stats["total_tracked_identifiers"])
             
-        except Exception:
-            # Don't let metrics collection crash the application
-            pass
+        except (ImportError, AttributeError) as e:
+            # Metrics module may not be available or properly configured
+            logger.debug(f"Metrics collection unavailable for rate limiter: {type(e).__name__}: {e}")
+        except Exception as e:
+            # Log unexpected errors but don't crash the application
+            logger.warning(f"Unexpected error updating rate limiter metrics: {type(e).__name__}: {e}")
 
 
 class AuditLogger:

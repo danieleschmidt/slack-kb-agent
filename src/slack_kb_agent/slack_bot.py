@@ -14,6 +14,7 @@ from .query_processor import QueryProcessor
 from .validation import validate_slack_input, sanitize_query, get_validator
 from .rate_limiting import get_user_rate_limiter, RateLimitResult
 from .llm import get_response_generator, LLMResponse
+from .configuration import get_slack_bot_config
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +42,8 @@ class SlackBotServer:
         signing_secret: str,
         *,
         analytics: Optional[UsageAnalytics] = None,
-        max_results: int = 5,
-        response_timeout: int = 30
+        max_results: Optional[int] = None,
+        response_timeout: Optional[int] = None
     ):
         """Initialize Slack bot server.
         
@@ -69,13 +70,15 @@ class SlackBotServer:
         if len(signing_secret) < 10:
             raise ValueError("Signing secret too short. Must be at least 10 characters")
         
+        config = get_slack_bot_config()
+        
         self.knowledge_base = knowledge_base
         self.slack_bot_token = slack_bot_token
         self.slack_app_token = slack_app_token
         self.signing_secret = signing_secret
         self.analytics = analytics
-        self.max_results = max_results
-        self.response_timeout = response_timeout
+        self.max_results = max_results if max_results is not None else config.max_results_default
+        self.response_timeout = response_timeout if response_timeout is not None else config.response_timeout
         
         # Initialize query processor
         self.query_processor = QueryProcessor(

@@ -18,6 +18,7 @@ except ImportError:
     SentenceTransformer = None
 
 from .models import Document
+from .configuration import get_vector_search_config
 from .cache import get_cache_manager
 
 logger = logging.getLogger(__name__)
@@ -108,7 +109,8 @@ class VectorSearchEngine:
         self._ensure_model_loaded()
         
         # Generate embeddings in batches for efficiency
-        batch_size = 32
+        config = get_vector_search_config()
+        batch_size = config.batch_size
         embeddings = []
         for i in range(0, len(texts), batch_size):
             batch = texts[i:i + batch_size]
@@ -127,19 +129,22 @@ class VectorSearchEngine:
     def search(
         self, 
         query: str, 
-        top_k: int = 10,
+        top_k: Optional[int] = None,
         threshold: Optional[float] = None
     ) -> List[Tuple[Document, float]]:
         """Search for similar documents using vector similarity with caching.
         
         Args:
             query: Search query text
-            top_k: Maximum number of results to return
+            top_k: Maximum number of results to return (defaults to config value)
             threshold: Minimum similarity score (defaults to instance threshold)
             
         Returns:
             List of (document, similarity_score) tuples sorted by relevance
         """
+        config = get_vector_search_config()
+        if top_k is None:
+            top_k = config.top_k_default
         if not query.strip():
             return []
             

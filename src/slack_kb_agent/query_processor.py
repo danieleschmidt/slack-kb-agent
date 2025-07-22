@@ -17,6 +17,7 @@ from .smart_routing import RoutingEngine, TeamMember
 from .llm import get_response_generator, LLMResponse
 from .monitoring import get_global_metrics, StructuredLogger
 from .cache import get_cache_manager
+from .configuration import get_slack_bot_config
 
 logger = logging.getLogger(__name__)
 
@@ -283,9 +284,10 @@ Return only the terms, separated by commas."""
 class QueryContext:
     """Manages conversation context for follow-up queries."""
     
-    def __init__(self, user_id: str, max_history: int = 5):
+    def __init__(self, user_id: str, max_history: Optional[int] = None):
         self.user_id = user_id
-        self.max_history = max_history
+        config = get_slack_bot_config()
+        self.max_history = max_history if max_history is not None else config.max_history_length
         self.history: List[Dict[str, Any]] = []
     
     def add_query(self, query: str, documents: List[str], timestamp: Optional[float] = None):
@@ -636,9 +638,9 @@ class EnhancedQueryProcessor(QueryProcessor):
             total_history_entries = sum(len(ctx.history) for ctx in self.user_contexts.values())
             self.metrics.set_gauge("query_processor_total_history_entries", total_history_entries)
             
-        except Exception:
+        except Exception as e:
             # Don't let metrics collection crash the application
-            pass
+            logger.debug(f"Failed to update query processor metrics: {type(e).__name__}: {e}")
 
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get memory usage statistics for the query processor."""
