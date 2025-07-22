@@ -14,6 +14,8 @@ from typing import Dict, List, Optional, NamedTuple, Any
 from dataclasses import dataclass
 import unicodedata
 
+from .constants import ValidationDefaults, EnvironmentConfig
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -32,9 +34,9 @@ class ValidationResult(NamedTuple):
 class ValidationConfig:
     """Configuration for input validation."""
     enabled: bool = True
-    max_query_length: int = 1000
-    max_user_id_length: int = 20
-    max_channel_id_length: int = 20
+    max_query_length: int = ValidationDefaults.MAX_QUERY_LENGTH
+    max_user_id_length: int = ValidationDefaults.MAX_USER_ID_LENGTH
+    max_channel_id_length: int = ValidationDefaults.MAX_CHANNEL_ID_LENGTH
     strip_html: bool = True
     block_sql_injection: bool = True
     block_command_injection: bool = True
