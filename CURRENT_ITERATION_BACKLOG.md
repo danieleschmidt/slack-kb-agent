@@ -46,16 +46,23 @@ Scale: 1-5 for each factor
 
 ## Epic 2: Error Handling Improvements 🛠️
 
-### P3: Replace Broad Exception Handlers
+### P3: Replace Broad Exception Handlers ⚡ IN PROGRESS
 **WSJF Score: 3.5** (14/4)
 - **Impact**: UV:3, BV:3, RR:4, TC:4 = 14 _(prevents hidden bugs)_
 - **Effort**: DC:2, TR:1, DP:1 = 4
 - **Description**: Replace `except Exception:` with specific exception types
 - **Files**: Multiple (database.py, query_processor.py, auth.py, knowledge_base.py)
+- **Progress**: 
+  - ✅ Created comprehensive test to track progress (test_specific_exception_handling.py)
+  - ✅ Fixed all broad exception handlers in slack_bot.py (7 handlers)
+  - ✅ Fixed all broad exception handlers in llm.py (5 handlers)
+  - 🔄 **Current Focus**: cache.py, monitoring.py, query_processor.py
+- **Remaining**: ~59 broad exception handlers across 11 files
 - **Tasks**:
-  - [ ] Audit all broad exception handlers
-  - [ ] Replace with specific exception types
-  - [ ] Add proper error logging
+  - [x] Audit all broad exception handlers (71 total found)
+  - [x] Replace with specific exception types in critical user-facing modules
+  - [x] Add proper error logging with context
+  - [ ] Complete remaining modules (cache, monitoring, query_processor, etc.)
   - [ ] Update tests to verify error handling
 
 ### P4: Fix Empty Exception Handlers

@@ -233,14 +233,31 @@ class OpenAIProvider(LLMProvider):
                 response_time=response_time
             )
             
-        except Exception as e:
+        except (ConnectionError, TimeoutError) as e:
             response_time = time.time() - start_time
-            logger.error(f"OpenAI API error: {e}")
-            
+            logger.error(f"OpenAI API connection/timeout error: {e}")
             return LLMResponse(
                 content="",
                 success=False,
-                error_message=str(e),
+                error_message=f"Connection error: {str(e)}",
+                response_time=response_time
+            )
+        except (ValueError, KeyError, AttributeError) as e:
+            response_time = time.time() - start_time
+            logger.error(f"OpenAI API response parsing error: {e}")
+            return LLMResponse(
+                content="",
+                success=False,
+                error_message=f"Response parsing error: {str(e)}",
+                response_time=response_time
+            )
+        except Exception as e:
+            response_time = time.time() - start_time
+            logger.exception(f"Unexpected OpenAI API error: {e}")
+            return LLMResponse(
+                content="",
+                success=False,
+                error_message=f"Unexpected error: {str(e)}",
                 response_time=response_time
             )
 
@@ -297,14 +314,31 @@ class AnthropicProvider(LLMProvider):
                 response_time=response_time
             )
             
-        except Exception as e:
+        except (ConnectionError, TimeoutError) as e:
             response_time = time.time() - start_time
-            logger.error(f"Anthropic API error: {e}")
-            
+            logger.error(f"Anthropic API connection/timeout error: {e}")
             return LLMResponse(
                 content="",
                 success=False,
-                error_message=str(e),
+                error_message=f"Connection error: {str(e)}",
+                response_time=response_time
+            )
+        except (ValueError, KeyError, AttributeError) as e:
+            response_time = time.time() - start_time
+            logger.error(f"Anthropic API response parsing error: {e}")
+            return LLMResponse(
+                content="",
+                success=False,
+                error_message=f"Response parsing error: {str(e)}",
+                response_time=response_time
+            )
+        except Exception as e:
+            response_time = time.time() - start_time
+            logger.exception(f"Unexpected Anthropic API error: {e}")
+            return LLMResponse(
+                content="",
+                success=False,
+                error_message=f"Unexpected error: {str(e)}",
                 response_time=response_time
             )
 
@@ -320,8 +354,14 @@ class ResponseGenerator:
             try:
                 self.provider = LLMProvider.create(self.config)
                 logger.info(f"LLM integration enabled with {self.config.provider} ({self.config.model})")
+            except ImportError as e:
+                logger.error(f"Failed to initialize LLM provider - missing dependency: {e}")
+                self.config.enabled = False
+            except (ValueError, TypeError, KeyError) as e:
+                logger.error(f"Failed to initialize LLM provider - configuration error: {e}")
+                self.config.enabled = False
             except Exception as e:
-                logger.error(f"Failed to initialize LLM provider: {e}")
+                logger.error(f"Failed to initialize LLM provider - unexpected error: {e}")
                 self.config.enabled = False
         else:
             logger.info("LLM integration disabled")
@@ -382,8 +422,16 @@ class ResponseGenerator:
                     # Wait before retry
                     time.sleep(self.config.retry_delay * (attempt + 1))
                     
+                except (ValueError, TypeError, AttributeError) as e:
+                    logger.error(f"LLM generation data error on attempt {attempt + 1}: {e}")
+                    if attempt == self.config.retry_attempts - 1:
+                        return LLMResponse(
+                            content="",
+                            success=False,
+                            error_message=f"Data processing failed after {self.config.retry_attempts} attempts: {e}"
+                        )
                 except Exception as e:
-                    logger.error(f"LLM generation error on attempt {attempt + 1}: {e}")
+                    logger.error(f"Unexpected LLM generation error on attempt {attempt + 1}: {e}")
                     if attempt == self.config.retry_attempts - 1:
                         return LLMResponse(
                             content="",
@@ -391,8 +439,15 @@ class ResponseGenerator:
                             error_message=f"Failed to generate response after {self.config.retry_attempts} attempts: {e}"
                         )
             
+        except (ValueError, TypeError, AttributeError) as e:
+            logger.error(f"Data processing error in response generation: {e}")
+            return LLMResponse(
+                content="",
+                success=False,
+                error_message=f"Data processing error: {e}"
+            )
         except Exception as e:
-            logger.error(f"Unexpected error in response generation: {e}")
+            logger.exception(f"Unexpected error in response generation: {e}")
             return LLMResponse(
                 content="",
                 success=False,

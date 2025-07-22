@@ -105,9 +105,13 @@ class SlackBotServer:
             """Handle @bot mentions in channels."""
             try:
                 self._handle_query_event(event, say, client, is_mention=True)
-            except Exception as e:
-                logger.error(f"Error handling app mention: {e}")
+            except (ValueError, TypeError, KeyError) as e:
+                logger.error(f"Error handling app mention - invalid data: {e}")
                 say("Sorry, I encountered an error processing your request.")
+            except Exception as e:
+                # Catch-all for unexpected errors to prevent Slack event handler from crashing
+                logger.exception(f"Unexpected error handling app mention: {e}")
+                say("Sorry, I encountered an unexpected error. Please try again.")
         
         @self.app.event("message")
         def handle_direct_message(event, say, client):
@@ -116,9 +120,13 @@ class SlackBotServer:
             if event.get("channel_type") == "im":
                 try:
                     self._handle_query_event(event, say, client, is_mention=False)
-                except Exception as e:
-                    logger.error(f"Error handling direct message: {e}")
+                except (ValueError, TypeError, KeyError) as e:
+                    logger.error(f"Error handling direct message - invalid data: {e}")
                     say("Sorry, I encountered an error processing your request.")
+                except Exception as e:
+                    # Catch-all for unexpected errors to prevent Slack event handler from crashing
+                    logger.exception(f"Unexpected error handling direct message: {e}")
+                    say("Sorry, I encountered an unexpected error. Please try again.")
         
         @self.app.command("/kb")
         def handle_kb_command(ack, command, say, client):
@@ -165,9 +173,13 @@ class SlackBotServer:
                 response = self.format_response(results, sanitized_query, user_id)
                 say(response)
                 
-            except Exception as e:
-                logger.error(f"Error handling slash command: {e}")
+            except (ValueError, TypeError, KeyError) as e:
+                logger.error(f"Error handling slash command - invalid data: {e}")
                 say("Sorry, I encountered an error processing your command.")
+            except Exception as e:
+                # Catch-all for unexpected errors to prevent Slack event handler from crashing
+                logger.exception(f"Unexpected error handling slash command: {e}")
+                say("Sorry, I encountered an unexpected error. Please try again.")
     
     def _handle_query_event(self, event: Dict[str, Any], say, client, is_mention: bool) -> None:
         """Handle query events from mentions or DMs."""
@@ -251,13 +263,21 @@ class SlackBotServer:
             
             return results
             
-        except Exception as e:
-            logger.error(f"Error processing query '{query}': {e}")
+        except (ValueError, TypeError, KeyError, AttributeError) as e:
+            logger.error(f"Error processing query '{query}' - data/attribute error: {e}")
             # Fallback to basic search on error
             try:
                 return self.knowledge_base.search(query)[:self.max_results]
+            except (ValueError, TypeError, KeyError, AttributeError) as fallback_error:
+                logger.error(f"Fallback search also failed - data/attribute error: {fallback_error}")
+                return []
+        except Exception as e:
+            logger.exception(f"Unexpected error processing query '{query}': {e}")
+            # Fallback to basic search on unexpected errors
+            try:
+                return self.knowledge_base.search(query)[:self.max_results]
             except Exception as fallback_error:
-                logger.error(f"Fallback search also failed: {fallback_error}")
+                logger.exception(f"Fallback search also failed unexpectedly: {fallback_error}")
                 return []
     
     def format_response(self, documents: List[Document], query: str, user_id: Optional[str] = None) -> Dict[str, Any]:
@@ -308,8 +328,12 @@ class SlackBotServer:
                         "response_type": "in_channel"
                     }
                     
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                logger.warning(f"LLM response generation failed - data/attribute error, falling back to basic format: {e}")
+            except ImportError as e:
+                logger.warning(f"LLM dependencies not available, falling back to basic format: {e}")
             except Exception as e:
-                logger.warning(f"LLM response generation failed, falling back to basic format: {e}")
+                logger.warning(f"LLM response generation failed unexpectedly, falling back to basic format: {e}")
         
         # Fallback to traditional document listing format
         if not documents:
@@ -396,8 +420,17 @@ I can search through documentation, code comments, GitHub issues, and team knowl
             handler = SocketModeHandler(self.app, self.slack_app_token)
             logger.info("Starting Slack bot server...")
             handler.start()
+        except (ValueError, TypeError, KeyError) as e:
+            logger.error(f"Failed to start bot server - configuration error: {e}")
+            raise
+        except ImportError as e:
+            logger.error(f"Failed to start bot server - missing dependencies: {e}")
+            raise
+        except ConnectionError as e:
+            logger.error(f"Failed to start bot server - connection error: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Failed to start bot server: {e}")
+            logger.error(f"Failed to start bot server - unexpected error: {e}")
             raise
     
     def stop(self) -> None:

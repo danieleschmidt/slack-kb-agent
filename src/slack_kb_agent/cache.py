@@ -123,8 +123,18 @@ class CacheManager:
             self._is_connected = True
             logger.info(f"Connected to Redis at {self.config.host}:{self.config.port}")
             
+        except (ConnectionError, TimeoutError) as e:
+            logger.warning(f"Failed to connect to Redis - connection/timeout error: {e}. Caching disabled.")
+            self._is_connected = False
+            self._redis_client = None
+            self._connection_pool = None
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Failed to connect to Redis - configuration error: {e}. Caching disabled.")
+            self._is_connected = False
+            self._redis_client = None
+            self._connection_pool = None
         except Exception as e:
-            logger.warning(f"Failed to connect to Redis: {e}. Caching disabled.")
+            logger.warning(f"Failed to connect to Redis - unexpected error: {e}. Caching disabled.")
             self._is_connected = False
             self._redis_client = None
             self._connection_pool = None
