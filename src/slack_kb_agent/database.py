@@ -26,6 +26,7 @@ from sqlalchemy.pool import QueuePool
 from sqlalchemy.exc import SQLAlchemyError, OperationalError, DatabaseError, IntegrityError
 
 from .models import Document
+from .security_utils import mask_database_url, get_safe_repr
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +167,15 @@ class DatabaseManager:
         if hasattr(self, 'engine'):
             self.engine.dispose()
             logger.info("Database connections closed")
+    
+    def __str__(self) -> str:
+        """Return a safe string representation without exposing credentials."""
+        return get_safe_repr(self)
+    
+    def __repr__(self) -> str:
+        """Return a safe representation without exposing credentials."""
+        masked_url = mask_database_url(self.database_url)
+        return f"DatabaseManager(database_url='{masked_url}')"
 
 
 class DatabaseRepository:
@@ -288,7 +298,7 @@ class DatabaseRepository:
                 "total_documents": total_docs,
                 "source_distribution": dict(source_stats),
                 "estimated_size_bytes": estimated_size,
-                "database_url": self.db_manager.database_url.split('@')[-1] if '@' in self.db_manager.database_url else "local"
+                "database_url": mask_database_url(self.db_manager.database_url)
             }
 
 
