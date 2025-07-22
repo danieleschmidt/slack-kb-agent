@@ -12,6 +12,8 @@ import logging
 from typing import Dict, Optional, NamedTuple
 from dataclasses import dataclass
 from collections import defaultdict, deque
+
+from .constants import RateLimitDefaults, EnvironmentConfig
 from datetime import datetime, timedelta
 import threading
 
@@ -33,22 +35,22 @@ class RateLimitResult(NamedTuple):
 class RateLimitConfig:
     """Configuration for rate limiting."""
     enabled: bool = True
-    requests_per_minute: int = 10
-    requests_per_hour: int = 100
-    requests_per_day: int = 1000
-    burst_limit: int = 15  # Allow short bursts above the per-minute limit
-    cleanup_interval: int = 300  # seconds between cleanup of old entries
+    requests_per_minute: int = RateLimitDefaults.REQUESTS_PER_MINUTE
+    requests_per_hour: int = RateLimitDefaults.REQUESTS_PER_HOUR
+    requests_per_day: int = RateLimitDefaults.REQUESTS_PER_DAY
+    burst_limit: int = RateLimitDefaults.BURST_LIMIT  # Allow short bursts above the per-minute limit
+    cleanup_interval: int = RateLimitDefaults.CLEANUP_INTERVAL_SECONDS  # seconds between cleanup of old entries
     
     @classmethod
     def from_env(cls) -> 'RateLimitConfig':
         """Create RateLimitConfig from environment variables."""
         return cls(
             enabled=os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true",
-            requests_per_minute=int(os.getenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "10")),
-            requests_per_hour=int(os.getenv("RATE_LIMIT_REQUESTS_PER_HOUR", "100")),
-            requests_per_day=int(os.getenv("RATE_LIMIT_REQUESTS_PER_DAY", "1000")),
-            burst_limit=int(os.getenv("RATE_LIMIT_BURST_LIMIT", "15")),
-            cleanup_interval=int(os.getenv("RATE_LIMIT_CLEANUP_INTERVAL", "300"))
+            requests_per_minute=EnvironmentConfig.get_requests_per_minute(),
+            requests_per_hour=EnvironmentConfig.get_requests_per_hour(),
+            requests_per_day=int(os.getenv("RATE_LIMIT_REQUESTS_PER_DAY", str(RateLimitDefaults.REQUESTS_PER_DAY))),
+            burst_limit=int(os.getenv("RATE_LIMIT_BURST_LIMIT", str(RateLimitDefaults.BURST_LIMIT))),
+            cleanup_interval=int(os.getenv("RATE_LIMIT_CLEANUP_INTERVAL", str(RateLimitDefaults.CLEANUP_INTERVAL_SECONDS)))
         )
 
 

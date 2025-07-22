@@ -20,6 +20,7 @@ from .exceptions import (
     SystemResourceError,
     KnowledgeBaseHealthError
 )
+from .constants import MonitoringDefaults, NetworkDefaults, EnvironmentConfig
 
 # Optional system monitoring dependency
 try:
@@ -37,9 +38,9 @@ class MonitoringConfig:
     """Configuration for monitoring system."""
     
     enabled: bool = True
-    metrics_port: int = 9090
-    health_check_interval: int = 30
-    metrics_retention_hours: int = 24
+    metrics_port: int = NetworkDefaults.DEFAULT_MONITORING_PORT
+    health_check_interval: int = MonitoringDefaults.HEALTH_CHECK_INTERVAL_SECONDS
+    metrics_retention_hours: int = MonitoringDefaults.METRICS_RETENTION_HOURS
     log_level: str = "INFO"
     
     @classmethod
@@ -47,9 +48,9 @@ class MonitoringConfig:
         """Create configuration from environment variables."""
         return cls(
             enabled=os.getenv("MONITORING_ENABLED", "true").lower() == "true",
-            metrics_port=int(os.getenv("METRICS_PORT", "9090")),
-            health_check_interval=int(os.getenv("HEALTH_CHECK_INTERVAL", "30")),
-            metrics_retention_hours=int(os.getenv("METRICS_RETENTION_HOURS", "24")),
+            metrics_port=EnvironmentConfig.get_monitoring_port(),
+            health_check_interval=EnvironmentConfig.get_health_check_interval(),
+            metrics_retention_hours=int(os.getenv("METRICS_RETENTION_HOURS", str(MonitoringDefaults.METRICS_RETENTION_HOURS))),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper()
         )
 
