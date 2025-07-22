@@ -141,6 +141,44 @@ class CacheDefaults:
 
 
 # =============================================================================
+# CIRCUIT BREAKER CONSTANTS
+# =============================================================================
+
+class CircuitBreakerDefaults:
+    """Circuit breaker configuration defaults for external services."""
+    
+    # OpenAI/Anthropic API circuit breaker
+    LLM_FAILURE_THRESHOLD = 3
+    LLM_SUCCESS_THRESHOLD = 2
+    LLM_TIMEOUT_SECONDS = 30.0
+    LLM_HALF_OPEN_MAX_REQUESTS = 1
+    
+    # Database circuit breaker  
+    DATABASE_FAILURE_THRESHOLD = 5
+    DATABASE_SUCCESS_THRESHOLD = 2
+    DATABASE_TIMEOUT_SECONDS = 60.0
+    DATABASE_HALF_OPEN_MAX_REQUESTS = 3
+    
+    # Redis cache circuit breaker
+    REDIS_FAILURE_THRESHOLD = 3
+    REDIS_SUCCESS_THRESHOLD = 2
+    REDIS_TIMEOUT_SECONDS = 30.0
+    REDIS_HALF_OPEN_MAX_REQUESTS = 2
+    
+    # Slack API circuit breaker
+    SLACK_FAILURE_THRESHOLD = 3
+    SLACK_SUCCESS_THRESHOLD = 2
+    SLACK_TIMEOUT_SECONDS = 30.0
+    SLACK_HALF_OPEN_MAX_REQUESTS = 1
+    
+    # Generic external service circuit breaker
+    EXTERNAL_SERVICE_FAILURE_THRESHOLD = 5
+    EXTERNAL_SERVICE_SUCCESS_THRESHOLD = 2
+    EXTERNAL_SERVICE_TIMEOUT_SECONDS = 60.0
+    EXTERNAL_SERVICE_HALF_OPEN_MAX_REQUESTS = 2
+
+
+# =============================================================================
 # MONITORING & OBSERVABILITY CONSTANTS
 # =============================================================================
 
@@ -273,6 +311,11 @@ def get_all_defaults() -> Dict[str, Any]:
         "cache": {
             attr: getattr(CacheDefaults, attr)
             for attr in dir(CacheDefaults)
+            if not attr.startswith('_')
+        },
+        "circuit_breaker": {
+            attr: getattr(CircuitBreakerDefaults, attr)
+            for attr in dir(CircuitBreakerDefaults)
             if not attr.startswith('_')
         },
         "monitoring": {
