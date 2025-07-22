@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-import pickle
 import hashlib
 import logging
+import base64
 from typing import Any, Optional, List, Union, Dict
 from dataclasses import dataclass, asdict
 from datetime import timedelta
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 class CacheConfig:
     """Configuration for Redis caching."""
     enabled: bool = True
-    host: str = "localhost"
+    host: Optional[str] = None
     port: int = 6379
     db: int = 0
     password: Optional[str] = None
@@ -42,11 +42,26 @@ class CacheConfig:
     
     @classmethod
     def from_env(cls) -> 'CacheConfig':
-        """Create cache config from environment variables."""
+        """Create cache config from environment variables.
+        
+        Raises:
+            ValueError: If cache is enabled but required Redis configuration is missing.
+        """
         import os
+        
+        enabled = os.getenv("CACHE_ENABLED", "true").lower() == "true"
+        host = os.getenv("REDIS_HOST")
+        
+        # If cache is enabled, require explicit Redis host configuration
+        if enabled and not host:
+            raise ValueError(
+                "REDIS_HOST environment variable is required when caching is enabled. "
+                "Set CACHE_ENABLED=false to disable caching or provide REDIS_HOST."
+            )
+        
         return cls(
-            enabled=os.getenv("CACHE_ENABLED", "true").lower() == "true",
-            host=os.getenv("REDIS_HOST", "localhost"),
+            enabled=enabled,
+            host=host,
             port=int(os.getenv("REDIS_PORT", "6379")),
             db=int(os.getenv("REDIS_DB", "0")),
             password=os.getenv("REDIS_PASSWORD"),
@@ -73,13 +88,15 @@ class CacheManager:
         self._connection_pool: Optional[redis.ConnectionPool] = None
         self._is_connected = False
         
-        if self.config.enabled and REDIS_AVAILABLE:
+        if self.config.enabled and REDIS_AVAILABLE and self.config.host:
             self._initialize_redis()
         else:
             if not REDIS_AVAILABLE:
                 logger.warning("Redis not available. Caching disabled.")
-            else:
+            elif not self.config.enabled:
                 logger.info("Caching disabled via configuration.")
+            elif not self.config.host:
+                logger.warning("Redis host not configured. Caching disabled.")
     
     def _initialize_redis(self) -> None:
         """Initialize Redis connection with connection pooling."""
@@ -132,9 +149,16 @@ class CacheManager:
         try:
             cached_data = self._redis_client.get(key)
             if cached_data:
-                embedding = pickle.loads(cached_data)
+                embedding = self._deserialize_embedding(cached_data)
                 logger.debug(f"Cache hit for embedding: {text[:50]}...")
                 return embedding
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Failed to deserialize embedding from cache: {e}")
+            # Remove corrupted cache entry
+            try:
+                self._redis_client.delete(key)
+            except Exception:
+                pass
         except Exception as e:
             logger.warning(f"Failed to get embedding from cache: {e}")
         
@@ -147,9 +171,11 @@ class CacheManager:
         
         key = self._generate_key("embedding", f"{model_name}:{text}")
         try:
-            serialized = pickle.dumps(embedding)
+            serialized = self._serialize_embedding(embedding)
             self._redis_client.setex(key, self.config.embedding_ttl, serialized)
             logger.debug(f"Cached embedding for: {text[:50]}...")
+        except (TypeError, ValueError) as e:
+            logger.warning(f"Failed to serialize embedding: {e}")
         except Exception as e:
             logger.warning(f"Failed to cache embedding: {e}")
     
@@ -283,6 +309,50 @@ class CacheManager:
         misses = info.get("keyspace_misses", 0)
         total = hits + misses
         return (hits / total * 100) if total > 0 else 0.0
+    
+    def _serialize_embedding(self, embedding: np.ndarray) -> bytes:
+        """Safely serialize numpy array embedding to bytes using JSON + base64.
+        
+        This replaces the unsafe pickle serialization with a secure alternative.
+        The format stores array metadata in JSON and the data as base64.
+        """
+        if not isinstance(embedding, np.ndarray):
+            raise TypeError("Embedding must be a numpy array")
+        
+        # Create metadata dictionary
+        metadata = {
+            "dtype": str(embedding.dtype),
+            "shape": embedding.shape,
+            "data": base64.b64encode(embedding.tobytes()).decode('ascii')
+        }
+        
+        # Serialize to JSON bytes
+        return json.dumps(metadata).encode('utf-8')
+    
+    def _deserialize_embedding(self, data: bytes) -> np.ndarray:
+        """Safely deserialize numpy array embedding from bytes.
+        
+        This replaces the unsafe pickle deserialization with a secure alternative.
+        """
+        try:
+            # Parse JSON metadata
+            metadata = json.loads(data.decode('utf-8'))
+            
+            # Validate required fields
+            required_fields = ["dtype", "shape", "data"]
+            for field in required_fields:
+                if field not in metadata:
+                    raise ValueError(f"Missing required field: {field}")
+            
+            # Reconstruct numpy array
+            array_data = base64.b64decode(metadata["data"])
+            embedding = np.frombuffer(array_data, dtype=metadata["dtype"])
+            embedding = embedding.reshape(metadata["shape"])
+            
+            return embedding
+            
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            raise ValueError(f"Invalid embedding cache data: {e}") from e
     
     def flush_cache(self, namespace: Optional[str] = None) -> int:
         """Flush cache entries. If namespace is provided, only flush that namespace."""

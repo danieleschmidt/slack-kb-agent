@@ -30,7 +30,7 @@ class TestCacheConfig(unittest.TestCase):
         """Test CacheConfig creation with defaults."""
         config = CacheConfig()
         self.assertTrue(config.enabled)
-        self.assertEqual(config.host, "localhost")
+        self.assertIsNone(config.host)  # No default host for security
         self.assertEqual(config.port, 6379)
         self.assertEqual(config.db, 0)
         self.assertIsNone(config.password)
@@ -59,6 +59,26 @@ class TestCacheConfig(unittest.TestCase):
             self.assertEqual(config.embedding_ttl, 86400)
             self.assertEqual(config.query_expansion_ttl, 7200)
             self.assertEqual(config.search_results_ttl, 1800)
+    
+    def test_cache_config_requires_host_when_enabled(self):
+        """Test that Redis host is required when caching is enabled."""
+        # Test with caching enabled but no host
+        with patch.dict(os.environ, {'CACHE_ENABLED': 'true'}, clear=True):
+            with self.assertRaises(ValueError) as cm:
+                CacheConfig.from_env()
+            self.assertIn("REDIS_HOST environment variable is required", str(cm.exception))
+        
+        # Test with caching disabled - should not require host
+        with patch.dict(os.environ, {'CACHE_ENABLED': 'false'}, clear=True):
+            config = CacheConfig.from_env()
+            self.assertFalse(config.enabled)
+            self.assertIsNone(config.host)
+        
+        # Test with caching enabled and host provided - should work
+        with patch.dict(os.environ, {'CACHE_ENABLED': 'true', 'REDIS_HOST': 'localhost'}):
+            config = CacheConfig.from_env()
+            self.assertTrue(config.enabled)
+            self.assertEqual(config.host, 'localhost')
 
 
 class TestCacheManagerMocked(unittest.TestCase):
@@ -115,9 +135,16 @@ class TestCacheManagerMocked(unittest.TestCase):
         self.cache_manager.set_embedding(text, model_name, embedding)
         self.mock_redis.setex.assert_called()
         
-        # Test cache hit
-        import pickle
-        self.mock_redis.get.return_value = pickle.dumps(embedding)
+        # Test cache hit - simulate the new secure serialization format
+        # Create the expected serialized format (JSON with base64 data)
+        import base64
+        metadata = {
+            "dtype": str(embedding.dtype),
+            "shape": embedding.shape,
+            "data": base64.b64encode(embedding.tobytes()).decode('ascii')
+        }
+        serialized_data = json.dumps(metadata).encode('utf-8')
+        self.mock_redis.get.return_value = serialized_data
         result = self.cache_manager.get_embedding(text, model_name)
         np.testing.assert_array_equal(result, embedding)
     
@@ -307,6 +334,161 @@ class TestGlobalCacheManager(unittest.TestCase):
         with patch('slack_kb_agent.cache.REDIS_AVAILABLE', True):
             # Would need actual Redis connection for True case
             pass
+
+
+class TestCacheSecurityFeatures(unittest.TestCase):
+    """Test security features of the cache implementation."""
+    
+    def setUp(self):
+        """Set up security test fixtures."""
+        self.mock_redis = MagicMock()
+        redis_mock.ConnectionPool.return_value = MagicMock()
+        redis_mock.Redis.return_value = self.mock_redis
+        self.mock_redis.ping.return_value = True
+        
+        config = CacheConfig(enabled=True, host="localhost", port=6379)
+        with patch('slack_kb_agent.cache.REDIS_AVAILABLE', True):
+            self.cache_manager = CacheManager(config)
+    
+    def test_secure_embedding_serialization(self):
+        """Test that embedding serialization uses secure JSON format instead of pickle."""
+        import numpy as np
+        import base64
+        
+        # Test various numpy array types and shapes
+        test_cases = [
+            np.array([0.1, 0.2, 0.3], dtype=np.float32),
+            np.array([[1, 2], [3, 4]], dtype=np.int32),
+            np.array([0.123456789], dtype=np.float64),
+            np.zeros(100, dtype=np.float32),
+        ]
+        
+        for embedding in test_cases:
+            with self.subTest(embedding=embedding):
+                # Test serialization
+                serialized = self.cache_manager._serialize_embedding(embedding)
+                self.assertIsInstance(serialized, bytes)
+                
+                # Verify it's JSON format (not pickle)
+                try:
+                    metadata = json.loads(serialized.decode('utf-8'))
+                    self.assertIn('dtype', metadata)
+                    self.assertIn('shape', metadata)
+                    self.assertIn('data', metadata)
+                except json.JSONDecodeError:
+                    self.fail("Serialized data is not valid JSON")
+                
+                # Test deserialization
+                deserialized = self.cache_manager._deserialize_embedding(serialized)
+                np.testing.assert_array_equal(embedding, deserialized)
+                self.assertEqual(embedding.dtype, deserialized.dtype)
+                self.assertEqual(embedding.shape, deserialized.shape)
+    
+    def test_malicious_embedding_data_rejection(self):
+        """Test that malicious embedding data is rejected during deserialization."""
+        import base64
+        
+        # Test cases for malicious data
+        malicious_data_cases = [
+            # Invalid JSON
+            b"invalid json data",
+            
+            # Missing required fields
+            json.dumps({"dtype": "float32"}).encode(),
+            json.dumps({"shape": [3]}).encode(),
+            json.dumps({"data": "base64data"}).encode(),
+            
+            # Invalid base64 data
+            json.dumps({
+                "dtype": "float32",
+                "shape": [3],
+                "data": "invalid_base64!"
+            }).encode(),
+            
+            # Mismatched data size
+            json.dumps({
+                "dtype": "float32", 
+                "shape": [10],
+                "data": base64.b64encode(b"short").decode()
+            }).encode(),
+            
+            # Invalid dtype
+            json.dumps({
+                "dtype": "invalid_dtype",
+                "shape": [3],
+                "data": base64.b64encode(b"12345678901234567890").decode()
+            }).encode(),
+        ]
+        
+        for malicious_data in malicious_data_cases:
+            with self.subTest(data=malicious_data):
+                with self.assertRaises(ValueError):
+                    self.cache_manager._deserialize_embedding(malicious_data)
+    
+    def test_embedding_cache_corruption_handling(self):
+        """Test that corrupted cache entries are handled gracefully."""
+        import numpy as np
+        
+        text = "test document"
+        model_name = "test-model"
+        
+        # Test with corrupted cache data
+        self.mock_redis.get.return_value = b"corrupted_data_not_json"
+        result = self.cache_manager.get_embedding(text, model_name)
+        self.assertIsNone(result)
+        
+        # Verify corrupted entry was deleted
+        self.mock_redis.delete.assert_called()
+    
+    def test_no_code_execution_in_cache_data(self):
+        """Test that cache data cannot execute arbitrary code."""
+        import numpy as np
+        
+        # Create a normal embedding
+        embedding = np.array([0.1, 0.2, 0.3], dtype=np.float32)
+        
+        # Serialize it safely
+        serialized = self.cache_manager._serialize_embedding(embedding)
+        
+        # Verify the serialized data contains no executable code patterns
+        serialized_str = serialized.decode('utf-8')
+        
+        # Check for common code execution patterns
+        dangerous_patterns = [
+            'import', 'eval', 'exec', '__', 'pickle', 'subprocess',
+            'os.system', 'compile', 'globals', 'locals'
+        ]
+        
+        for pattern in dangerous_patterns:
+            self.assertNotIn(pattern, serialized_str.lower(),
+                           f"Serialized data contains dangerous pattern: {pattern}")
+        
+        # Verify it's just JSON with base64 data
+        metadata = json.loads(serialized_str)
+        self.assertIsInstance(metadata['dtype'], str)
+        self.assertIsInstance(metadata['shape'], list)
+        self.assertIsInstance(metadata['data'], str)
+        
+        # Verify base64 data contains only valid base64 characters
+        import re
+        base64_pattern = re.compile(r'^[A-Za-z0-9+/]*={0,2}$')
+        self.assertTrue(base64_pattern.match(metadata['data']),
+                       "Base64 data contains invalid characters")
+    
+    def test_embedding_type_validation(self):
+        """Test that only numpy arrays are accepted for serialization."""
+        invalid_inputs = [
+            [0.1, 0.2, 0.3],  # Python list
+            "not an array",    # String
+            42,               # Integer
+            {"array": [1, 2, 3]},  # Dictionary
+            None,             # None
+        ]
+        
+        for invalid_input in invalid_inputs:
+            with self.subTest(input=invalid_input):
+                with self.assertRaises(TypeError):
+                    self.cache_manager._serialize_embedding(invalid_input)
 
 
 class TestCacheIntegration(unittest.TestCase):
