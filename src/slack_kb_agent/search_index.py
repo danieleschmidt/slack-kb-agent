@@ -9,6 +9,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from .models import Document
+from .configuration import get_search_config
 
 logger = logging.getLogger(__name__)
 
@@ -24,15 +25,16 @@ class SearchResult:
 class InvertedIndex:
     """Inverted index for efficient text search."""
     
-    def __init__(self, min_word_length: int = 2, max_index_size: int = 50000):
+    def __init__(self, min_word_length: Optional[int] = None, max_index_size: Optional[int] = None):
         """Initialize inverted index.
         
         Args:
-            min_word_length: Minimum word length to index
-            max_index_size: Maximum number of terms to index (memory limit)
+            min_word_length: Minimum word length to index (defaults to config value)
+            max_index_size: Maximum number of terms to index (defaults to config value)
         """
-        self.min_word_length = min_word_length
-        self.max_index_size = max_index_size
+        config = get_search_config()
+        self.min_word_length = min_word_length if min_word_length is not None else config.min_word_length
+        self.max_index_size = max_index_size if max_index_size is not None else config.max_index_size
         
         # term -> set of document indices
         self.index: Dict[str, Set[int]] = defaultdict(set)
@@ -129,16 +131,19 @@ class InvertedIndex:
         
         return True
     
-    def search(self, query: str, max_results: int = 100) -> List[SearchResult]:
+    def search(self, query: str, max_results: Optional[int] = None) -> List[SearchResult]:
         """Search for documents matching the query.
         
         Args:
             query: Search query
-            max_results: Maximum number of results to return
+            max_results: Maximum number of results to return (defaults to config value)
             
         Returns:
             List of search results sorted by relevance
         """
+        if max_results is None:
+            max_results = get_search_config().max_results_default
+            
         if not query.strip():
             # Return all valid documents for empty query
             results = []
@@ -259,18 +264,19 @@ class InvertedIndex:
 class SearchEngine:
     """High-level search engine with caching and optimization."""
     
-    def __init__(self, enable_indexing: bool = True, cache_size: int = 1000):
+    def __init__(self, enable_indexing: Optional[bool] = None, cache_size: Optional[int] = None):
         """Initialize search engine.
         
         Args:
-            enable_indexing: Whether to use inverted index for search
-            cache_size: Size of search result cache
+            enable_indexing: Whether to use inverted index for search (defaults to config)
+            cache_size: Size of search result cache (defaults to config)
         """
-        self.enable_indexing = enable_indexing
-        self.cache_size = cache_size
+        config = get_search_config()
+        self.enable_indexing = enable_indexing if enable_indexing is not None else config.enable_indexing
+        self.cache_size = cache_size if cache_size is not None else config.cache_size
         
         # Search components
-        self.index = InvertedIndex() if enable_indexing else None
+        self.index = InvertedIndex() if self.enable_indexing else None
         self.documents: List[Document] = []
         
         # Simple LRU cache for search results
@@ -301,16 +307,18 @@ class SearchEngine:
         # Clear cache when documents are added
         self._clear_cache()
     
-    def search(self, query: str, max_results: int = 100) -> List[Document]:
+    def search(self, query: str, max_results: Optional[int] = None) -> List[Document]:
         """Search for documents matching the query.
         
         Args:
             query: Search query
-            max_results: Maximum number of results to return
+            max_results: Maximum number of results to return (defaults to config value)
             
         Returns:
             List of matching documents
         """
+        if max_results is None:
+            max_results = get_search_config().max_results_default
         self.search_count += 1
         
         # Check cache first

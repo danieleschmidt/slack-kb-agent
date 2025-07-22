@@ -17,6 +17,7 @@ from .smart_routing import RoutingEngine, TeamMember
 from .llm import get_response_generator, LLMResponse
 from .monitoring import get_global_metrics, StructuredLogger
 from .cache import get_cache_manager
+from .configuration import get_slack_bot_config
 
 logger = logging.getLogger(__name__)
 
@@ -283,9 +284,10 @@ Return only the terms, separated by commas."""
 class QueryContext:
     """Manages conversation context for follow-up queries."""
     
-    def __init__(self, user_id: str, max_history: int = 5):
+    def __init__(self, user_id: str, max_history: Optional[int] = None):
         self.user_id = user_id
-        self.max_history = max_history
+        config = get_slack_bot_config()
+        self.max_history = max_history if max_history is not None else config.max_history_length
         self.history: List[Dict[str, Any]] = []
     
     def add_query(self, query: str, documents: List[str], timestamp: Optional[float] = None):
