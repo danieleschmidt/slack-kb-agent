@@ -27,6 +27,8 @@ from sqlalchemy.exc import SQLAlchemyError, OperationalError, DatabaseError, Int
 
 from .models import Document
 from .security_utils import mask_database_url, get_safe_repr
+from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+from .constants import CircuitBreakerDefaults
 
 logger = logging.getLogger(__name__)
 
@@ -97,8 +99,12 @@ class DatabaseManager:
                 "Example: postgresql://user:password@localhost:5432/dbname"
             )
         
-        # Create engine with connection pooling
-        self.engine = create_engine(
+        # Initialize circuit breaker for database operations
+        self.circuit_breaker = self._get_circuit_breaker()
+        
+        # Create engine with connection pooling using circuit breaker protection
+        self.engine = self.circuit_breaker.call(
+            create_engine,
             self.database_url,
             poolclass=QueuePool,
             pool_size=pool_size,
@@ -118,12 +124,23 @@ class DatabaseManager:
         )
         
         self._initialized = False
+    
+    def _get_circuit_breaker(self) -> CircuitBreaker:
+        """Get or create circuit breaker for database operations."""
+        circuit_config = CircuitBreakerConfig(
+            failure_threshold=CircuitBreakerDefaults.DATABASE_FAILURE_THRESHOLD,
+            success_threshold=CircuitBreakerDefaults.DATABASE_SUCCESS_THRESHOLD,
+            timeout_seconds=CircuitBreakerDefaults.DATABASE_TIMEOUT_SECONDS,
+            half_open_max_requests=CircuitBreakerDefaults.DATABASE_HALF_OPEN_MAX_REQUESTS,
+            service_name="database"
+        )
+        return CircuitBreaker(circuit_config)
         
     def initialize(self) -> None:
         """Initialize database schema."""
         try:
-            # Create all tables
-            Base.metadata.create_all(bind=self.engine)
+            # Create all tables with circuit breaker protection
+            self.circuit_breaker.call(Base.metadata.create_all, bind=self.engine)
             self._initialized = True
             logger.info("Database schema initialized successfully")
         except SQLAlchemyError as e:
@@ -134,7 +151,7 @@ class DatabaseManager:
         """Check if database is available and accessible."""
         try:
             with self.get_session() as session:
-                session.execute('SELECT 1')
+                self.circuit_breaker.call(session.execute, 'SELECT 1')
                 return True
         except (OperationalError, DatabaseError) as e:
             logger.warning(f"Database connection failed: {type(e).__name__}: {e}")
@@ -145,13 +162,13 @@ class DatabaseManager:
     
     @contextmanager
     def get_session(self):
-        """Get a database session with automatic cleanup."""
-        session = self.SessionLocal()
+        """Get a database session with automatic cleanup and circuit breaker protection."""
+        session = self.circuit_breaker.call(self.SessionLocal)
         try:
             yield session
-            session.commit()
+            self.circuit_breaker.call(session.commit)
         except (SQLAlchemyError, Exception) as e:
-            session.rollback()
+            self.circuit_breaker.call(session.rollback)
             if isinstance(e, SQLAlchemyError):
                 logger.error(f"Database operation failed: {type(e).__name__}: {e}")
             raise
@@ -183,123 +200,171 @@ class DatabaseRepository:
     
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
+        self.circuit_breaker = self._get_circuit_breaker()
+    
+    def _get_circuit_breaker(self) -> CircuitBreaker:
+        """Get or create circuit breaker for repository operations."""
+        circuit_config = CircuitBreakerConfig(
+            failure_threshold=CircuitBreakerDefaults.DATABASE_FAILURE_THRESHOLD,
+            success_threshold=CircuitBreakerDefaults.DATABASE_SUCCESS_THRESHOLD,
+            timeout_seconds=CircuitBreakerDefaults.DATABASE_TIMEOUT_SECONDS,
+            half_open_max_requests=CircuitBreakerDefaults.DATABASE_HALF_OPEN_MAX_REQUESTS,
+            service_name="database"
+        )
+        return CircuitBreaker(circuit_config)
         
     def create_document(self, document: Document) -> int:
         """Create a new document and return its ID."""
-        with self.db_manager.get_session() as session:
-            doc_model = DocumentModel.from_document(document)
-            session.add(doc_model)
-            session.flush()  # Flush to get the ID without committing
-            return doc_model.id
+        def _create_document():
+            with self.db_manager.get_session() as session:
+                doc_model = DocumentModel.from_document(document)
+                session.add(doc_model)
+                session.flush()  # Flush to get the ID without committing
+                return doc_model.id
+        
+        return self.circuit_breaker.call(_create_document)
     
     def create_documents(self, documents: List[Document]) -> List[int]:
         """Create multiple documents and return their IDs."""
-        with self.db_manager.get_session() as session:
-            doc_models = [DocumentModel.from_document(doc) for doc in documents]
-            session.add_all(doc_models)
-            session.flush()
-            return [doc.id for doc in doc_models]
+        def _create_documents():
+            with self.db_manager.get_session() as session:
+                doc_models = [DocumentModel.from_document(doc) for doc in documents]
+                session.add_all(doc_models)
+                session.flush()
+                return [doc.id for doc in doc_models]
+        
+        return self.circuit_breaker.call(_create_documents)
     
     def get_document(self, doc_id: int) -> Optional[Document]:
         """Get a document by ID."""
-        with self.db_manager.get_session() as session:
-            doc_model = session.query(DocumentModel).filter(DocumentModel.id == doc_id).first()
-            return doc_model.to_document() if doc_model else None
+        def _get_document():
+            with self.db_manager.get_session() as session:
+                doc_model = session.query(DocumentModel).filter(DocumentModel.id == doc_id).first()
+                return doc_model.to_document() if doc_model else None
+        
+        return self.circuit_breaker.call(_get_document)
     
     def get_all_documents(self, limit: Optional[int] = None, offset: int = 0) -> List[Document]:
         """Get all documents with optional pagination."""
-        with self.db_manager.get_session() as session:
-            query = session.query(DocumentModel).order_by(DocumentModel.created_at.desc())
-            
-            if offset > 0:
-                query = query.offset(offset)
-            if limit is not None:
-                query = query.limit(limit)
+        def _get_all_documents():
+            with self.db_manager.get_session() as session:
+                query = session.query(DocumentModel).order_by(DocumentModel.created_at.desc())
                 
-            doc_models = query.all()
-            return [doc.to_document() for doc in doc_models]
+                if offset > 0:
+                    query = query.offset(offset)
+                if limit is not None:
+                    query = query.limit(limit)
+                    
+                doc_models = query.all()
+                return [doc.to_document() for doc in doc_models]
+        
+        return self.circuit_breaker.call(_get_all_documents)
     
     def get_documents_by_source(self, source: str, limit: Optional[int] = None) -> List[Document]:
         """Get documents from a specific source."""
-        with self.db_manager.get_session() as session:
-            query = session.query(DocumentModel).filter(DocumentModel.source == source)
-            
-            if limit is not None:
-                query = query.limit(limit)
+        def _get_documents_by_source():
+            with self.db_manager.get_session() as session:
+                query = session.query(DocumentModel).filter(DocumentModel.source == source)
                 
-            doc_models = query.all()
-            return [doc.to_document() for doc in doc_models]
+                if limit is not None:
+                    query = query.limit(limit)
+                    
+                doc_models = query.all()
+                return [doc.to_document() for doc in doc_models]
+        
+        return self.circuit_breaker.call(_get_documents_by_source)
     
     def search_documents(self, query: str, limit: int = 100) -> List[Document]:
         """Search documents by content (basic text search)."""
-        with self.db_manager.get_session() as session:
-            # Use PostgreSQL ILIKE for case-insensitive search
-            doc_models = (
-                session.query(DocumentModel)
-                .filter(DocumentModel.content.ilike(f'%{query}%'))
-                .order_by(DocumentModel.created_at.desc())
-                .limit(limit)
-                .all()
-            )
-            return [doc.to_document() for doc in doc_models]
+        def _search_documents():
+            with self.db_manager.get_session() as session:
+                # Use PostgreSQL ILIKE for case-insensitive search
+                doc_models = (
+                    session.query(DocumentModel)
+                    .filter(DocumentModel.content.ilike(f'%{query}%'))
+                    .order_by(DocumentModel.created_at.desc())
+                    .limit(limit)
+                    .all()
+                )
+                return [doc.to_document() for doc in doc_models]
+        
+        return self.circuit_breaker.call(_search_documents)
     
     def count_documents(self) -> int:
         """Count total number of documents."""
-        with self.db_manager.get_session() as session:
-            return session.query(DocumentModel).count()
+        def _count_documents():
+            with self.db_manager.get_session() as session:
+                return session.query(DocumentModel).count()
+        
+        return self.circuit_breaker.call(_count_documents)
     
     def count_documents_by_source(self, source: str) -> int:
         """Count documents from a specific source."""
-        with self.db_manager.get_session() as session:
-            return session.query(DocumentModel).filter(DocumentModel.source == source).count()
+        def _count_documents_by_source():
+            with self.db_manager.get_session() as session:
+                return session.query(DocumentModel).filter(DocumentModel.source == source).count()
+        
+        return self.circuit_breaker.call(_count_documents_by_source)
     
     def delete_document(self, doc_id: int) -> bool:
         """Delete a document by ID. Returns True if deleted, False if not found."""
-        with self.db_manager.get_session() as session:
-            doc_model = session.query(DocumentModel).filter(DocumentModel.id == doc_id).first()
-            if doc_model:
-                session.delete(doc_model)
-                return True
-            return False
+        def _delete_document():
+            with self.db_manager.get_session() as session:
+                doc_model = session.query(DocumentModel).filter(DocumentModel.id == doc_id).first()
+                if doc_model:
+                    session.delete(doc_model)
+                    return True
+                return False
+        
+        return self.circuit_breaker.call(_delete_document)
     
     def delete_documents_by_source(self, source: str) -> int:
         """Delete all documents from a specific source. Returns count of deleted documents."""
-        with self.db_manager.get_session() as session:
-            count = session.query(DocumentModel).filter(DocumentModel.source == source).count()
-            session.query(DocumentModel).filter(DocumentModel.source == source).delete()
-            return count
+        def _delete_documents_by_source():
+            with self.db_manager.get_session() as session:
+                count = session.query(DocumentModel).filter(DocumentModel.source == source).count()
+                session.query(DocumentModel).filter(DocumentModel.source == source).delete()
+                return count
+        
+        return self.circuit_breaker.call(_delete_documents_by_source)
     
     def clear_all_documents(self) -> int:
         """Delete all documents. Returns count of deleted documents."""
-        with self.db_manager.get_session() as session:
-            count = session.query(DocumentModel).count()
-            session.query(DocumentModel).delete()
-            return count
+        def _clear_all_documents():
+            with self.db_manager.get_session() as session:
+                count = session.query(DocumentModel).count()
+                session.query(DocumentModel).delete()
+                return count
+        
+        return self.circuit_breaker.call(_clear_all_documents)
     
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get database statistics."""
-        with self.db_manager.get_session() as session:
-            total_docs = session.query(DocumentModel).count()
-            
-            # Get source distribution
-            source_stats = (
-                session.query(DocumentModel.source, session.query(DocumentModel).filter(DocumentModel.source == DocumentModel.source).count())
-                .group_by(DocumentModel.source)
-                .all()
-            )
-            
-            # Estimate database size (rough approximation)
-            size_query = session.execute(
-                "SELECT pg_total_relation_size('documents') as size"
-            ).fetchone()
-            estimated_size = size_query[0] if size_query else 0
-            
-            return {
-                "total_documents": total_docs,
-                "source_distribution": dict(source_stats),
-                "estimated_size_bytes": estimated_size,
-                "database_url": mask_database_url(self.db_manager.database_url)
-            }
+        def _get_memory_stats():
+            with self.db_manager.get_session() as session:
+                total_docs = session.query(DocumentModel).count()
+                
+                # Get source distribution
+                source_stats = (
+                    session.query(DocumentModel.source, session.query(DocumentModel).filter(DocumentModel.source == DocumentModel.source).count())
+                    .group_by(DocumentModel.source)
+                    .all()
+                )
+                
+                # Estimate database size (rough approximation)
+                size_query = session.execute(
+                    "SELECT pg_total_relation_size('documents') as size"
+                ).fetchone()
+                estimated_size = size_query[0] if size_query else 0
+                
+                return {
+                    "total_documents": total_docs,
+                    "source_distribution": dict(source_stats),
+                    "estimated_size_bytes": estimated_size,
+                    "database_url": mask_database_url(self.db_manager.database_url)
+                }
+        
+        return self.circuit_breaker.call(_get_memory_stats)
 
 
 # Global database manager instance
