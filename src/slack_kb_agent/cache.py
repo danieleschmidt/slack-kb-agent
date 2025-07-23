@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import json
 import hashlib
 import logging
@@ -163,6 +164,7 @@ class CacheManager:
             success_threshold=CircuitBreakerDefaults.REDIS_SUCCESS_THRESHOLD,
             timeout_seconds=CircuitBreakerDefaults.REDIS_TIMEOUT_SECONDS,
             half_open_max_requests=CircuitBreakerDefaults.REDIS_HALF_OPEN_MAX_REQUESTS,
+            failure_window_seconds=CircuitBreakerDefaults.REDIS_FAILURE_WINDOW_SECONDS,
             service_name="redis"
         )
         return CircuitBreaker(circuit_config)
@@ -449,6 +451,24 @@ class CacheManager:
 
 # Global cache instance (initialized lazily)
 _cache_manager: Optional[CacheManager] = None
+
+
+def _cleanup_cache_resources() -> None:
+    """Clean up global cache resources on application shutdown."""
+    global _cache_manager
+    
+    if _cache_manager is not None:
+        try:
+            _cache_manager.close()
+            logger.info("Redis connection pool closed during cleanup")
+        except Exception as e:
+            logger.warning(f"Error closing cache manager during cleanup: {e}")
+        finally:
+            _cache_manager = None
+
+
+# Register cleanup function to run on application exit
+atexit.register(_cleanup_cache_resources)
 
 
 def get_cache_manager() -> CacheManager:
