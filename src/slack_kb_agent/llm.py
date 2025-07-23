@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 
 from .models import Document
+from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitOpenError, CircuitState
+from .constants import CircuitBreakerDefaults
 
 
 # Set up logging
@@ -349,11 +351,14 @@ class ResponseGenerator:
     def __init__(self, config: Optional[LLMConfig] = None):
         self.config = config or LLMConfig.from_env()
         self.provider = None
+        self.circuit_breaker = None
         
         if self.config.enabled:
             try:
                 self.provider = LLMProvider.create(self.config)
-                logger.info(f"LLM integration enabled with {self.config.provider} ({self.config.model})")
+                # Initialize circuit breaker for LLM protection
+                self.circuit_breaker = self._get_circuit_breaker()
+                logger.info(f"LLM integration enabled with {self.config.provider} ({self.config.model}) and circuit breaker protection")
             except ImportError as e:
                 logger.error(f"Failed to initialize LLM provider - missing dependency: {e}")
                 self.config.enabled = False
@@ -365,6 +370,17 @@ class ResponseGenerator:
                 self.config.enabled = False
         else:
             logger.info("LLM integration disabled")
+    
+    def _get_circuit_breaker(self) -> CircuitBreaker:
+        """Get or create circuit breaker for LLM operations."""
+        circuit_config = CircuitBreakerConfig(
+            failure_threshold=CircuitBreakerDefaults.LLM_FAILURE_THRESHOLD,
+            success_threshold=CircuitBreakerDefaults.LLM_SUCCESS_THRESHOLD,
+            timeout_seconds=CircuitBreakerDefaults.LLM_TIMEOUT_SECONDS,
+            half_open_max_requests=CircuitBreakerDefaults.LLM_HALF_OPEN_MAX_REQUESTS,
+            service_name=f"llm_provider_{self.config.provider}"
+        )
+        return CircuitBreaker(circuit_config)
     
     def generate_response(self, 
                          query: str, 
@@ -379,6 +395,48 @@ class ResponseGenerator:
                 error_message="LLM integration is disabled or not available"
             )
         
+        # Check circuit breaker state first
+        if self.circuit_breaker:
+            try:
+                # Use circuit breaker to protect the call
+                return self.circuit_breaker.call(
+                    self._generate_response_protected, 
+                    query, 
+                    context_documents, 
+                    user_id
+                )
+            except CircuitOpenError as e:
+                logger.warning(f"LLM request blocked by circuit breaker: {e}")
+                return LLMResponse(
+                    content="",
+                    success=False,
+                    error_message=f"LLM service temporarily unavailable due to circuit breaker protection: {e}"
+                )
+            except Exception as e:
+                # Circuit breaker caught an error from the LLM call
+                logger.error(f"LLM call failed and was caught by circuit breaker: {e}")
+                return LLMResponse(
+                    content="",
+                    success=False,
+                    error_message=f"LLM generation failed: {e}"
+                )
+        else:
+            # Fallback without circuit breaker protection
+            try:
+                return self._generate_response_protected(query, context_documents, user_id)
+            except Exception as e:
+                logger.error(f"LLM call failed without circuit breaker protection: {e}")
+                return LLMResponse(
+                    content="",
+                    success=False,
+                    error_message=f"LLM generation failed: {e}"
+                )
+    
+    def _generate_response_protected(self, 
+                                   query: str, 
+                                   context_documents: List[Document],
+                                   user_id: Optional[str] = None) -> LLMResponse:
+        """Internal method to generate response with error handling."""
         try:
             # Sanitize query to prevent prompt injection
             sanitized_query = self._sanitize_query(query)
@@ -415,9 +473,10 @@ class ResponseGenerator:
                     # Log failed attempt
                     logger.warning(f"LLM generation attempt {attempt + 1} failed: {response.error_message}")
                     
-                    # If this was the last attempt, return the failed response
+                    # If this was the last attempt, raise exception for circuit breaker
                     if attempt == self.config.retry_attempts - 1:
-                        return response
+                        # Circuit breaker should count this as failure
+                        raise RuntimeError(f"LLM generation failed after {self.config.retry_attempts} attempts: {response.error_message}")
                     
                     # Wait before retry
                     time.sleep(self.config.retry_delay * (attempt + 1))
@@ -425,34 +484,18 @@ class ResponseGenerator:
                 except (ValueError, TypeError, AttributeError) as e:
                     logger.error(f"LLM generation data error on attempt {attempt + 1}: {e}")
                     if attempt == self.config.retry_attempts - 1:
-                        return LLMResponse(
-                            content="",
-                            success=False,
-                            error_message=f"Data processing failed after {self.config.retry_attempts} attempts: {e}"
-                        )
+                        raise RuntimeError(f"Data processing failed after {self.config.retry_attempts} attempts: {e}")
                 except Exception as e:
                     logger.error(f"Unexpected LLM generation error on attempt {attempt + 1}: {e}")
                     if attempt == self.config.retry_attempts - 1:
-                        return LLMResponse(
-                            content="",
-                            success=False,
-                            error_message=f"Failed to generate response after {self.config.retry_attempts} attempts: {e}"
-                        )
+                        raise RuntimeError(f"Failed to generate response after {self.config.retry_attempts} attempts: {e}")
             
         except (ValueError, TypeError, AttributeError) as e:
             logger.error(f"Data processing error in response generation: {e}")
-            return LLMResponse(
-                content="",
-                success=False,
-                error_message=f"Data processing error: {e}"
-            )
+            raise RuntimeError(f"Data processing error: {e}")
         except Exception as e:
             logger.exception(f"Unexpected error in response generation: {e}")
-            return LLMResponse(
-                content="",
-                success=False,
-                error_message=f"Unexpected error: {e}"
-            )
+            raise RuntimeError(f"Unexpected error: {e}")
     
     def _sanitize_query(self, query: str) -> str:
         """Sanitize query to prevent prompt injection attacks."""

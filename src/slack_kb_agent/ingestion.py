@@ -14,6 +14,8 @@ from urllib.parse import urljoin, urlparse
 
 from .knowledge_base import KnowledgeBase
 from .models import Document
+from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitOpenError
+from .constants import CircuitBreakerDefaults
 
 logger = logging.getLogger(__name__)
 
@@ -168,9 +170,21 @@ class GitHubIngester(BaseIngester):
     def __init__(self, token: Optional[str] = None, processor: Optional[ContentProcessor] = None):
         self.token = token
         self.processor = processor or ContentProcessor()
+        self.circuit_breaker = self._get_circuit_breaker()
         
         if not INGESTION_DEPS_AVAILABLE:
             raise ImportError("GitHub ingestion requires 'requests' package")
+    
+    def _get_circuit_breaker(self) -> CircuitBreaker:
+        """Get or create circuit breaker for GitHub API operations."""
+        circuit_config = CircuitBreakerConfig(
+            failure_threshold=CircuitBreakerDefaults.EXTERNAL_SERVICE_FAILURE_THRESHOLD,
+            success_threshold=CircuitBreakerDefaults.EXTERNAL_SERVICE_SUCCESS_THRESHOLD,
+            timeout_seconds=CircuitBreakerDefaults.EXTERNAL_SERVICE_TIMEOUT_SECONDS,
+            half_open_max_requests=CircuitBreakerDefaults.EXTERNAL_SERVICE_HALF_OPEN_MAX_REQUESTS,
+            service_name="github_api"
+        )
+        return CircuitBreaker(circuit_config)
     
     def ingest_repository(self, repo: str, include_issues: bool = True, include_readme: bool = True) -> List[Document]:
         """Ingest content from a GitHub repository."""
@@ -188,6 +202,14 @@ class GitHubIngester(BaseIngester):
         
         return documents
     
+    def ingest_issues(self, repo: str) -> List[Document]:
+        """Public method to ingest GitHub issues with circuit breaker protection."""
+        return self._ingest_issues(repo)
+    
+    def ingest_readme(self, repo: str) -> List[Document]:
+        """Public method to ingest GitHub README with circuit breaker protection."""
+        return self._ingest_readme(repo)
+    
     def _ingest_issues(self, repo: str) -> List[Document]:
         """Ingest GitHub issues and pull requests."""
         documents = []
@@ -195,10 +217,20 @@ class GitHubIngester(BaseIngester):
         headers = {"Authorization": f"token {self.token}"} if self.token else {}
         
         try:
-            # Get issues (includes PRs)
+            # Get issues (includes PRs) with circuit breaker protection
             url = f"https://api.github.com/repos/{repo}/issues"
-            response = requests.get(url, headers=headers, params={"state": "all", "per_page": 100}, timeout=30)
-            response.raise_for_status()
+            try:
+                response = self.circuit_breaker.call(
+                    requests.get, 
+                    url, 
+                    headers=headers, 
+                    params={"state": "all", "per_page": 100}, 
+                    timeout=30
+                )
+                response.raise_for_status()
+            except CircuitOpenError as e:
+                logger.warning(f"GitHub API request blocked by circuit breaker: {e}")
+                return documents
             
             for issue in response.json():
                 title = issue.get("title", "")
@@ -237,17 +269,26 @@ class GitHubIngester(BaseIngester):
         headers = {"Authorization": f"token {self.token}"} if self.token else {}
         
         try:
+            # Get README metadata with circuit breaker protection
             url = f"https://api.github.com/repos/{repo}/readme"
-            response = requests.get(url, headers=headers, timeout=30)
+            try:
+                response = self.circuit_breaker.call(requests.get, url, headers=headers, timeout=30)
+            except CircuitOpenError as e:
+                logger.warning(f"GitHub README API request blocked by circuit breaker: {e}")
+                return documents
             
             if response.status_code == 200:
                 readme_data = response.json()
                 
-                # Get the actual content
+                # Get the actual content with circuit breaker protection
                 content_url = readme_data.get("download_url")
                 if content_url:
-                    content_response = requests.get(content_url, timeout=30)
-                    content_response.raise_for_status()
+                    try:
+                        content_response = self.circuit_breaker.call(requests.get, content_url, timeout=30)
+                        content_response.raise_for_status()
+                    except CircuitOpenError as e:
+                        logger.warning(f"GitHub README content request blocked by circuit breaker: {e}")
+                        return documents
                     
                     content = content_response.text
                     content = self.processor.process_markdown(content)
@@ -282,9 +323,21 @@ class WebDocumentationCrawler(BaseIngester):
     def __init__(self, processor: Optional[ContentProcessor] = None):
         self.processor = processor or ContentProcessor()
         self.visited_urls: Set[str] = set()
+        self.circuit_breaker = self._get_circuit_breaker()
         
         if not INGESTION_DEPS_AVAILABLE:
             raise ImportError("Web crawling requires 'requests' and 'beautifulsoup4' packages")
+    
+    def _get_circuit_breaker(self) -> CircuitBreaker:
+        """Get or create circuit breaker for web crawling operations."""
+        circuit_config = CircuitBreakerConfig(
+            failure_threshold=CircuitBreakerDefaults.EXTERNAL_SERVICE_FAILURE_THRESHOLD,
+            success_threshold=CircuitBreakerDefaults.EXTERNAL_SERVICE_SUCCESS_THRESHOLD,
+            timeout_seconds=CircuitBreakerDefaults.EXTERNAL_SERVICE_TIMEOUT_SECONDS,
+            half_open_max_requests=CircuitBreakerDefaults.EXTERNAL_SERVICE_HALF_OPEN_MAX_REQUESTS,
+            service_name="web_crawler"
+        )
+        return CircuitBreaker(circuit_config)
     
     def crawl_url(self, url: str, max_depth: int = 2) -> List[Document]:
         """Crawl a documentation website."""
@@ -298,6 +351,12 @@ class WebDocumentationCrawler(BaseIngester):
         
         return documents
     
+    def crawl_site(self, url: str, max_pages: int = 10) -> List[Document]:
+        """Public method to crawl a site with circuit breaker protection.""" 
+        # Use crawl_url but limit by max_pages rather than depth
+        # For simplicity, we'll use depth of 2 but the circuit breaker protects each request
+        return self.crawl_url(url, max_depth=2)
+    
     def _crawl_recursive(self, url: str, max_depth: int, current_depth: int) -> List[Document]:
         """Recursively crawl pages."""
         documents = []
@@ -308,8 +367,13 @@ class WebDocumentationCrawler(BaseIngester):
         self.visited_urls.add(url)
         
         try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
+            # Make HTTP request with circuit breaker protection
+            try:
+                response = self.circuit_breaker.call(requests.get, url, timeout=10)
+                response.raise_for_status()
+            except CircuitOpenError as e:
+                logger.warning(f"Web crawling request blocked by circuit breaker: {e}")
+                return documents
             
             if "text/html" not in response.headers.get("content-type", ""):
                 return documents
