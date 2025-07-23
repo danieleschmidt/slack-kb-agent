@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import json
 import hashlib
 import logging
@@ -20,6 +21,8 @@ except ImportError:
     REDIS_AVAILABLE = False
 
 from .models import Document
+from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitState
+from .constants import CircuitBreakerDefaults
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +90,7 @@ class CacheManager:
         self._redis_client: Optional[redis.Redis] = None
         self._connection_pool: Optional[redis.ConnectionPool] = None
         self._is_connected = False
+        self._circuit_breaker: Optional[CircuitBreaker] = None
         
         if self.config.enabled and REDIS_AVAILABLE and self.config.host:
             self._initialize_redis()
@@ -118,8 +122,11 @@ class CacheManager:
                 decode_responses=False
             )
             
-            # Test connection
-            self._redis_client.ping()
+            # Initialize circuit breaker for connection testing
+            self._circuit_breaker = self._get_circuit_breaker()
+            
+            # Test connection through circuit breaker
+            self._circuit_breaker.call(lambda: self._redis_client.ping())
             self._is_connected = True
             logger.info(f"Connected to Redis at {self.config.host}:{self.config.port}")
             
@@ -128,16 +135,19 @@ class CacheManager:
             self._is_connected = False
             self._redis_client = None
             self._connection_pool = None
+            self._circuit_breaker = None
         except (ValueError, TypeError) as e:
             logger.warning(f"Failed to connect to Redis - configuration error: {e}. Caching disabled.")
             self._is_connected = False
             self._redis_client = None
             self._connection_pool = None
+            self._circuit_breaker = None
         except MemoryError as e:
             logger.warning(f"Failed to connect to Redis - insufficient memory: {e}. Caching disabled.")
             self._is_connected = False
             self._redis_client = None
             self._connection_pool = None
+            self._circuit_breaker = None
         except Exception as e:
             # Defensive catch-all for Redis connection - caching should never break the app
             error_type = type(e).__name__
@@ -145,10 +155,31 @@ class CacheManager:
             self._is_connected = False
             self._redis_client = None
             self._connection_pool = None
+            self._circuit_breaker = None
+    
+    def _get_circuit_breaker(self) -> CircuitBreaker:
+        """Get or create circuit breaker for Redis operations."""
+        circuit_config = CircuitBreakerConfig(
+            failure_threshold=CircuitBreakerDefaults.REDIS_FAILURE_THRESHOLD,
+            success_threshold=CircuitBreakerDefaults.REDIS_SUCCESS_THRESHOLD,
+            timeout_seconds=CircuitBreakerDefaults.REDIS_TIMEOUT_SECONDS,
+            half_open_max_requests=CircuitBreakerDefaults.REDIS_HALF_OPEN_MAX_REQUESTS,
+            failure_window_seconds=CircuitBreakerDefaults.REDIS_FAILURE_WINDOW_SECONDS,
+            service_name="redis"
+        )
+        return CircuitBreaker(circuit_config)
     
     def is_available(self) -> bool:
         """Check if cache is available."""
-        return self._is_connected and self._redis_client is not None
+        return (self._is_connected and 
+                self._redis_client is not None and 
+                self._circuit_breaker is not None and 
+                self._circuit_breaker.state != CircuitState.OPEN)
+    
+    @property
+    def circuit_breaker(self) -> Optional[CircuitBreaker]:
+        """Get the circuit breaker instance for testing/monitoring."""
+        return self._circuit_breaker
     
     def _generate_key(self, namespace: str, identifier: str) -> str:
         """Generate cache key with namespace."""
@@ -164,7 +195,7 @@ class CacheManager:
         
         key = self._generate_key("embedding", f"{model_name}:{text}")
         try:
-            cached_data = self._redis_client.get(key)
+            cached_data = self._circuit_breaker.call(lambda: self._redis_client.get(key))
             if cached_data:
                 embedding = self._deserialize_embedding(cached_data)
                 logger.debug(f"Cache hit for embedding: {text[:50]}...")
@@ -173,7 +204,7 @@ class CacheManager:
             logger.warning(f"Failed to deserialize embedding from cache: {e}")
             # Remove corrupted cache entry
             try:
-                self._redis_client.delete(key)
+                self._circuit_breaker.call(lambda: self._redis_client.delete(key))
             except (ConnectionError, TimeoutError) as delete_error:
                 logger.warning(f"Failed to delete corrupted cache entry {key} - connection issue: {delete_error}")
             except Exception as delete_error:
@@ -197,7 +228,7 @@ class CacheManager:
         key = self._generate_key("embedding", f"{model_name}:{text}")
         try:
             serialized = self._serialize_embedding(embedding)
-            self._redis_client.setex(key, self.config.embedding_ttl, serialized)
+            self._circuit_breaker.call(lambda: self._redis_client.setex(key, self.config.embedding_ttl, serialized))
             logger.debug(f"Cached embedding for: {text[:50]}...")
         except (TypeError, ValueError) as e:
             logger.warning(f"Failed to serialize embedding: {e}")
@@ -217,7 +248,7 @@ class CacheManager:
         
         key = self._generate_key("query_expansion", f"{expansion_type}:{query}")
         try:
-            cached_data = self._redis_client.get(key)
+            cached_data = self._circuit_breaker.call(lambda: self._redis_client.get(key))
             if cached_data:
                 expansion = json.loads(cached_data.decode())
                 logger.debug(f"Cache hit for query expansion: {query}")
@@ -235,7 +266,7 @@ class CacheManager:
         key = self._generate_key("query_expansion", f"{expansion_type}:{query}")
         try:
             serialized = json.dumps(expansion)
-            self._redis_client.setex(key, self.config.query_expansion_ttl, serialized)
+            self._circuit_breaker.call(lambda: self._redis_client.setex(key, self.config.query_expansion_ttl, serialized))
             logger.debug(f"Cached query expansion for: {query}")
         except Exception as e:
             logger.warning(f"Failed to cache query expansion: {e}")
@@ -247,7 +278,7 @@ class CacheManager:
         
         key = self._generate_key("search_results", query_hash)
         try:
-            cached_data = self._redis_client.get(key)
+            cached_data = self._circuit_breaker.call(lambda: self._redis_client.get(key))
             if cached_data:
                 results = json.loads(cached_data.decode())
                 logger.debug(f"Cache hit for search results: {query_hash[:10]}...")
@@ -265,7 +296,7 @@ class CacheManager:
         key = self._generate_key("search_results", query_hash)
         try:
             serialized = json.dumps(results)
-            self._redis_client.setex(key, self.config.search_results_ttl, serialized)
+            self._circuit_breaker.call(lambda: self._redis_client.setex(key, self.config.search_results_ttl, serialized))
             logger.debug(f"Cached search results for: {query_hash[:10]}...")
         except Exception as e:
             logger.warning(f"Failed to cache search results: {e}")
@@ -287,9 +318,9 @@ class CacheManager:
         
         try:
             full_pattern = f"slack_kb:{pattern}"
-            keys = self._redis_client.keys(full_pattern)
+            keys = self._circuit_breaker.call(lambda: self._redis_client.keys(full_pattern))
             if keys:
-                deleted = self._redis_client.delete(*keys)
+                deleted = self._circuit_breaker.call(lambda: self._redis_client.delete(*keys))
                 logger.info(f"Invalidated {deleted} search cache entries")
                 return deleted
         except Exception as e:
@@ -303,13 +334,13 @@ class CacheManager:
             return {"status": "unavailable", "reason": "Redis not connected"}
         
         try:
-            info = self._redis_client.info()
+            info = self._circuit_breaker.call(lambda: self._redis_client.info())
             
             # Count keys by namespace
             key_counts = {}
             for namespace in ["embedding", "query_expansion", "search_results"]:
                 pattern = f"slack_kb:{namespace}:*"
-                keys = self._redis_client.keys(pattern)
+                keys = self._circuit_breaker.call(lambda: self._redis_client.keys(pattern))
                 key_counts[namespace] = len(keys)
             
             return {
@@ -393,17 +424,17 @@ class CacheManager:
         try:
             if namespace:
                 pattern = f"slack_kb:{namespace}:*"
-                keys = self._redis_client.keys(pattern)
+                keys = self._circuit_breaker.call(lambda: self._redis_client.keys(pattern))
                 if keys:
-                    deleted = self._redis_client.delete(*keys)
+                    deleted = self._circuit_breaker.call(lambda: self._redis_client.delete(*keys))
                     logger.info(f"Flushed {deleted} entries from {namespace} cache")
                     return deleted
             else:
                 # Flush all slack_kb keys
                 pattern = "slack_kb:*"
-                keys = self._redis_client.keys(pattern)
+                keys = self._circuit_breaker.call(lambda: self._redis_client.keys(pattern))
                 if keys:
-                    deleted = self._redis_client.delete(*keys)
+                    deleted = self._circuit_breaker.call(lambda: self._redis_client.delete(*keys))
                     logger.info(f"Flushed {deleted} total cache entries")
                     return deleted
         except Exception as e:
@@ -420,6 +451,24 @@ class CacheManager:
 
 # Global cache instance (initialized lazily)
 _cache_manager: Optional[CacheManager] = None
+
+
+def _cleanup_cache_resources() -> None:
+    """Clean up global cache resources on application shutdown."""
+    global _cache_manager
+    
+    if _cache_manager is not None:
+        try:
+            _cache_manager.close()
+            logger.info("Redis connection pool closed during cleanup")
+        except Exception as e:
+            logger.warning(f"Error closing cache manager during cleanup: {e}")
+        finally:
+            _cache_manager = None
+
+
+# Register cleanup function to run on application exit
+atexit.register(_cleanup_cache_resources)
 
 
 def get_cache_manager() -> CacheManager:

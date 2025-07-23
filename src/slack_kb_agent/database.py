@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import os
 import logging
 from typing import List, Optional, Dict, Any
@@ -132,6 +133,7 @@ class DatabaseManager:
             success_threshold=CircuitBreakerDefaults.DATABASE_SUCCESS_THRESHOLD,
             timeout_seconds=CircuitBreakerDefaults.DATABASE_TIMEOUT_SECONDS,
             half_open_max_requests=CircuitBreakerDefaults.DATABASE_HALF_OPEN_MAX_REQUESTS,
+            failure_window_seconds=CircuitBreakerDefaults.DATABASE_FAILURE_WINDOW_SECONDS,
             service_name="database"
         )
         return CircuitBreaker(circuit_config)
@@ -209,6 +211,7 @@ class DatabaseRepository:
             success_threshold=CircuitBreakerDefaults.DATABASE_SUCCESS_THRESHOLD,
             timeout_seconds=CircuitBreakerDefaults.DATABASE_TIMEOUT_SECONDS,
             half_open_max_requests=CircuitBreakerDefaults.DATABASE_HALF_OPEN_MAX_REQUESTS,
+            failure_window_seconds=CircuitBreakerDefaults.DATABASE_FAILURE_WINDOW_SECONDS,
             service_name="database"
         )
         return CircuitBreaker(circuit_config)
@@ -370,6 +373,26 @@ class DatabaseRepository:
 # Global database manager instance
 _db_manager: Optional[DatabaseManager] = None
 _db_repository: Optional[DatabaseRepository] = None
+
+
+def _cleanup_database_resources() -> None:
+    """Clean up global database resources on application shutdown."""
+    global _db_manager, _db_repository
+    
+    if _db_manager is not None:
+        try:
+            _db_manager.close()
+            logger.info("Database connection pool closed during cleanup")
+        except Exception as e:
+            logger.warning(f"Error closing database manager during cleanup: {e}")
+        finally:
+            _db_manager = None
+    
+    _db_repository = None
+
+
+# Register cleanup function to run on application exit
+atexit.register(_cleanup_database_resources)
 
 
 def get_database_manager() -> DatabaseManager:
