@@ -47,8 +47,8 @@ class TestRateLimiting(unittest.TestCase):
         """Test RateLimitConfig creation from environment variables."""
         with patch.dict('os.environ', {
             'RATE_LIMIT_ENABLED': 'true',
-            'RATE_LIMIT_REQUESTS_PER_MINUTE': '15',
-            'RATE_LIMIT_REQUESTS_PER_HOUR': '200',
+            'RATE_LIMIT_PER_MINUTE': '15',
+            'RATE_LIMIT_PER_HOUR': '200',
             'RATE_LIMIT_BURST_LIMIT': '20'
         }):
             config = RateLimitConfig.from_env()

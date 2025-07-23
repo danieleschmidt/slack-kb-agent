@@ -73,7 +73,7 @@ class InputValidator:
     
     # Command injection patterns (more targeted)
     COMMAND_INJECTION_PATTERNS = [
-        r"(&&|\|\|)",        # Command chaining
+        r"(&&|\|\|?)",       # Command chaining (including single pipe)
         r";\s*(rm|curl|nc|wget)", # Dangerous commands after semicolon
         r"\$\([^)]*\)",      # Command substitution
         r"`[^`]*`",          # Backtick command execution
@@ -125,20 +125,20 @@ class InputValidator:
                 error_message=f"Query too long (max {self.config.max_query_length} characters)"
             )
         
-        # Sanitize the query
-        sanitized = self._sanitize_text(query)
-        
-        # Check for dangerous patterns after sanitization
+        # Check for dangerous patterns in ORIGINAL query before sanitization
         validation_errors = []
         
-        if self.config.block_sql_injection and self._contains_sql_injection(sanitized):
+        if self.config.block_sql_injection and self._contains_sql_injection(query):
             validation_errors.append("Potential SQL injection detected")
         
-        if self.config.block_command_injection and self._contains_command_injection(sanitized):
+        if self.config.block_command_injection and self._contains_command_injection(query):
             validation_errors.append("Potential command injection detected")
         
-        if self.config.block_xss and self._contains_xss(sanitized):
+        if self.config.block_xss and self._contains_xss(query):
             validation_errors.append("Potential XSS detected")
+        
+        # Sanitize the query (for safe processing if validation passes)
+        sanitized = self._sanitize_text(query)
         
         # Check for control characters
         if self._contains_dangerous_characters(sanitized):
