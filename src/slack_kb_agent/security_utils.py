@@ -72,7 +72,7 @@ def mask_database_url(url: Optional[str]) -> str:
         
         return f"{scheme}://{masked_creds}@{host_db}"
         
-    except Exception:
+    except (ValueError, TypeError, AttributeError, IndexError) as e:
         # If URL parsing fails for any reason, return a safe generic indicator
         return f"<masked_database_url_parse_error>"
 
@@ -120,7 +120,7 @@ def mask_connection_string(connection_str: Optional[str]) -> str:
         # If we can't parse it, assume it might be sensitive and mask it
         return "<masked_connection_string>"
         
-    except Exception:
+    except (ValueError, TypeError, AttributeError, IndexError) as e:
         return "<masked_connection_string_error>"
 
 
@@ -214,7 +214,7 @@ def get_safe_repr(obj: Any, mask_attrs: Optional[set] = None) -> str:
                         else:
                             attrs.append(f"{attr_name}={type(value).__name__}")
                             
-                except Exception:
+                except (AttributeError, TypeError, ValueError) as e:
                     # Skip attributes that can't be accessed
                     continue
         
@@ -223,7 +223,7 @@ def get_safe_repr(obj: Any, mask_attrs: Optional[set] = None) -> str:
         else:
             return f"{class_name}()"
             
-    except Exception:
+    except (AttributeError, TypeError, ValueError) as e:
         # Fallback to basic representation
         return f"<{type(obj).__name__} object>"
 

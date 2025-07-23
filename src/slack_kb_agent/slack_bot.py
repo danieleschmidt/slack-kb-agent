@@ -15,6 +15,7 @@ from .validation import validate_slack_input, sanitize_query, get_validator
 from .rate_limiting import get_user_rate_limiter, RateLimitResult
 from .llm import get_response_generator, LLMResponse
 from .configuration import get_slack_bot_config
+from .constants import SlackBotDefaults
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +68,8 @@ class SlackBotServer:
             raise ValueError("Invalid bot token format. Must start with 'xoxb-'")
         if not slack_app_token.startswith("xapp-"):
             raise ValueError("Invalid app token format. Must start with 'xapp-'")
-        if len(signing_secret) < 10:
-            raise ValueError("Signing secret too short. Must be at least 10 characters")
+        if len(signing_secret) < SlackBotDefaults.MIN_SIGNING_SECRET_LENGTH:
+            raise ValueError(f"Signing secret too short. Must be at least {SlackBotDefaults.MIN_SIGNING_SECRET_LENGTH} characters")
         
         config = get_slack_bot_config()
         
@@ -91,6 +92,10 @@ class SlackBotServer:
             token=slack_bot_token,
             signing_secret=signing_secret
         )
+        
+        # Handler will be set when start() is called
+        self.handler: Optional[SocketModeHandler] = None
+        self._running = False
         
         # Register event handlers
         self._register_handlers()
@@ -416,28 +421,89 @@ I can search through documentation, code comments, GitHub issues, and team knowl
         if not SLACK_DEPS_AVAILABLE:
             raise ImportError("Slack dependencies not available")
         
+        if self._running:
+            logger.warning("Bot server is already running")
+            return
+        
         try:
-            handler = SocketModeHandler(self.app, self.slack_app_token)
+            self.handler = SocketModeHandler(self.app, self.slack_app_token)
             logger.info("Starting Slack bot server...")
-            handler.start()
+            self._running = True
+            self.handler.start()
         except (ValueError, TypeError, KeyError) as e:
             logger.error(f"Failed to start bot server - configuration error: {e}")
+            self._running = False
+            self.handler = None
             raise
         except ImportError as e:
             logger.error(f"Failed to start bot server - missing dependencies: {e}")
+            self._running = False
+            self.handler = None
             raise
         except ConnectionError as e:
             logger.error(f"Failed to start bot server - connection error: {e}")
+            self._running = False
+            self.handler = None
             raise
         except Exception as e:
             logger.error(f"Failed to start bot server - unexpected error: {e}")
+            self._running = False
+            self.handler = None
             raise
     
     def stop(self) -> None:
         """Stop the bot server gracefully."""
-        # The SocketModeHandler doesn't have a built-in stop method
-        # This is a placeholder for future implementation
-        logger.info("Bot server stopped")
+        if not self._running:
+            logger.warning("Bot server is not running")
+            return
+        
+        logger.info("Stopping Slack bot server gracefully...")
+        
+        try:
+            # Set running flag to false first
+            self._running = False
+            
+            # Close the socket mode handler if it exists
+            if self.handler is not None:
+                try:
+                    # SocketModeHandler uses threading, we need to stop it properly
+                    if hasattr(self.handler, 'client') and hasattr(self.handler.client, 'socket_mode_client'):
+                        socket_client = self.handler.client.socket_mode_client
+                        if hasattr(socket_client, 'disconnect'):
+                            socket_client.disconnect()
+                            logger.debug("Disconnected socket mode client")
+                    
+                    # Close the handler
+                    if hasattr(self.handler, 'close'):
+                        self.handler.close()
+                        logger.debug("Closed socket mode handler")
+                        
+                except Exception as handler_error:
+                    logger.warning(f"Error closing socket mode handler: {handler_error}")
+                finally:
+                    self.handler = None
+            
+            # Flush any pending analytics data
+            if self.analytics:
+                try:
+                    # Analytics doesn't have explicit flush method, but we can log current state
+                    stats = self.analytics.get_stats()
+                    logger.info(f"Final analytics: {stats['total_queries']} total queries processed")
+                except Exception as analytics_error:
+                    logger.warning(f"Error finalizing analytics: {analytics_error}")
+            
+            # Give any remaining background tasks a moment to complete
+            import time
+            time.sleep(0.1)
+            
+            logger.info("Bot server stopped gracefully")
+            
+        except Exception as e:
+            logger.error(f"Error during graceful shutdown: {e}")
+            # Force cleanup even if graceful shutdown fails
+            self._running = False
+            self.handler = None
+            logger.warning("Forced bot server shutdown due to error")
 
 
 def create_bot_from_env() -> SlackBotServer:
