@@ -18,6 +18,7 @@ from .llm import get_response_generator, LLMResponse
 from .monitoring import get_global_metrics, StructuredLogger
 from .cache import get_cache_manager
 from .configuration import get_slack_bot_config
+from .constants import QueryProcessingDefaults
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,9 @@ class QueryIntent(Enum):
         """Classify with confidence score."""
         intent = cls.classify(query)
         # Simple confidence based on pattern strength
-        confidence = 0.8 if len(query.split()) > 2 else 0.6
+        confidence = (QueryProcessingDefaults.CLASSIFICATION_HIGH_CONFIDENCE 
+                     if len(query.split()) > QueryProcessingDefaults.CLASSIFICATION_MIN_WORDS 
+                     else QueryProcessingDefaults.CLASSIFICATION_LOW_CONFIDENCE)
         return {"intent": intent, "confidence": confidence}
 
 
@@ -463,7 +466,7 @@ class QueryProcessor:
 class EnhancedQueryProcessor(QueryProcessor):
     """Enhanced query processor with LLM integration and advanced features."""
     
-    def __init__(self, kb: KnowledgeBase, max_user_contexts: Optional[int] = 1000, **kwargs):
+    def __init__(self, kb: KnowledgeBase, max_user_contexts: Optional[int] = QueryProcessingDefaults.DEFAULT_MAX_USER_CONTEXTS, **kwargs):
         super().__init__(kb, **kwargs)
         self.query_expansion = QueryExpansion()
         self.user_contexts: OrderedDict[str, QueryContext] = OrderedDict()

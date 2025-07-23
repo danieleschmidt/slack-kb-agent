@@ -184,6 +184,113 @@ class CircuitBreakerDefaults:
 
 
 # =============================================================================
+# QUERY PROCESSING CONSTANTS
+# =============================================================================
+
+class QueryProcessingDefaults:
+    """Query processing and enhancement constants."""
+    
+    # Query classification
+    CLASSIFICATION_HIGH_CONFIDENCE = 0.8
+    CLASSIFICATION_LOW_CONFIDENCE = 0.6
+    CLASSIFICATION_MIN_WORDS = 2
+    
+    # Query expansion
+    MIN_EXPANSION_TERM_LENGTH = 2
+    MAX_EXPANSION_TERMS = 5
+    MAX_EXPANDED_SEARCH_TERMS = 5
+    MAX_BASIC_SUGGESTION_EXPANSIONS = 3
+    
+    # Context and history
+    DEFAULT_MAX_USER_CONTEXTS = 1000
+    CONTEXT_RECENT_WINDOW = 3
+    CONTEXT_RELEVANCE_WINDOW = 2
+    CONTEXT_RELEVANCE_THRESHOLD = 0.2
+    MAX_CONTEXT_TOPICS = 3
+    MAX_CONTEXT_DOCUMENT_SOURCES = 5
+    
+    # Search behavior
+    SEMANTIC_SEARCH_THRESHOLD = 0.7
+    MAX_ENHANCED_SEARCH_RESULTS = 10
+    MAX_QUERY_SUGGESTIONS = 4
+    DEFAULT_SEMANTIC_SEARCH_TOP_K = 10
+    
+    # Content processing
+    MAX_SANITIZED_QUERY_LENGTH = 500
+    CHARS_PER_TOKEN_ESTIMATE = 4
+    MIN_PARTIAL_DOCUMENT_CHARS = 100
+    PARTIAL_CONTENT_SOURCE_BUFFER = 50
+
+
+# =============================================================================
+# SLACK BOT CONSTANTS
+# =============================================================================
+
+class SlackBotDefaults:
+    """Slack bot configuration constants."""
+    
+    # Authentication validation
+    MIN_SIGNING_SECRET_LENGTH = 10
+    
+    # Response formatting
+    MAX_RESPONSE_SOURCES_FULL = 3
+    MAX_RESPONSE_SOURCES_BRIEF = 2
+    MAX_CONTENT_PREVIEW_LENGTH = 197
+    ANALYTICS_TOP_QUERIES_COUNT = 5
+    
+    # Shutdown behavior
+    SHUTDOWN_SLEEP_SECONDS = 0.1
+    
+    # Error messages
+    ERROR_MESSAGE_GENERIC = "Sorry, I encountered an error processing your request."
+    ERROR_MESSAGE_UNEXPECTED = "Sorry, I encountered an unexpected error. Please try again."
+
+
+# =============================================================================
+# INGESTION & DATA COLLECTION CONSTANTS
+# =============================================================================
+
+class IngestionDefaults:
+    """Data ingestion and collection constants."""
+    
+    # Secret detection patterns
+    MIN_API_KEY_LENGTH = 10
+    MIN_TOKEN_LENGTH = 15
+    MIN_SECRET_LENGTH = 10
+    
+    # API limits and timeouts
+    GITHUB_API_PER_PAGE = 100
+    GITHUB_API_TIMEOUT_SECONDS = 30
+    WEB_CRAWL_TIMEOUT_SECONDS = 10
+    DEFAULT_MAX_CRAWL_PAGES = 10
+    
+    # Slack ingestion
+    DEFAULT_SLACK_HISTORY_DAYS = 30
+    SLACK_API_MESSAGE_LIMIT = 1000
+    SECONDS_PER_DAY = 24 * 60 * 60
+    
+    # Processing
+    DEFAULT_BATCH_PROCESSOR_SIZE = 50
+    DOCUMENT_HASH_PREFIX_LENGTH = 8
+
+
+# =============================================================================
+# DATABASE CONSTANTS
+# =============================================================================
+
+class DatabaseDefaults:
+    """Database configuration constants."""
+    
+    # Connection pool settings
+    DEFAULT_POOL_SIZE = 10
+    DEFAULT_MAX_OVERFLOW = 20
+    POOL_TIMEOUT_SECONDS = 30
+    
+    # Search limits
+    DEFAULT_SEARCH_LIMIT = 100
+
+
+# =============================================================================
 # MONITORING & OBSERVABILITY CONSTANTS
 # =============================================================================
 
@@ -200,8 +307,11 @@ class MonitoringDefaults:
     
     # Thresholds for health checks
     MAX_MEMORY_USAGE_PERCENT = 90
+    MEMORY_WARNING_THRESHOLD_PERCENT = 75
     MAX_DISK_USAGE_PERCENT = 95
+    DISK_WARNING_THRESHOLD_PERCENT = 85
     MIN_FREE_DISK_MB = 1024  # 1GB
+    MIN_KNOWLEDGE_BASE_DOCS_WARNING = 10
     
     # HTTP response codes
     HTTP_OK = 200
@@ -210,6 +320,25 @@ class MonitoringDefaults:
     HTTP_FORBIDDEN = 403
     HTTP_NOT_FOUND = 404
     HTTP_INTERNAL_ERROR = 500
+    
+    # Authentication cleanup
+    AUTH_CLEANUP_INTERVAL_SECONDS = 3600
+
+
+# =============================================================================
+# DISPLAY & FORMATTING CONSTANTS
+# =============================================================================
+
+class DisplayDefaults:
+    """Constants for display and formatting purposes."""
+    
+    # Security utilities
+    MAX_ATTRIBUTE_DISPLAY_LENGTH = 50
+    MAX_ATTRIBUTES_DISPLAY = 5
+    
+    # Calculations
+    PERCENT_MULTIPLIER = 100
+    BYTES_PER_MB = 1024 * 1024
 
 
 # =============================================================================
