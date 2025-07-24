@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.7.5 - 2025-07-24
+
+- **SECURITY FIX**: Fix critical SQL injection vulnerability in search_documents method
+- feat(security): replace f-string SQL interpolation with SQLAlchemy's func.concat for safe parameter binding
+- feat(security): add comprehensive input validation and sanitization for search queries
+- feat(security): implement query length limits to prevent DoS attacks
+- feat(security): enhance error handling with proper logging for search operations
+- feat(testing): add comprehensive SQL injection security test suite
+- refactor(database): improve search functionality while maintaining performance
+- security(database): prevent arbitrary SQL execution through search parameters
+- **TESTING**: Add comprehensive test coverage for security_utils module (40 test cases)
+- feat(testing): test credential masking for database URLs, connection strings, and dictionaries
+- feat(testing): verify SQL injection protection and input validation
+- feat(testing): ensure sensitive data protection across all utility functions
+- fix(security): improve complex password parsing with @ symbols in passwords
+- fix(security): enhance regex patterns for more accurate credential detection
+- refactor(security): strengthen connection string detection and masking logic
+
 ## v1.7.4 - 2025-07-22
 
 - feat(error-handling): improve cache exception handling with better categorization

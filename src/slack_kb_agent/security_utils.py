@@ -52,12 +52,13 @@ def mask_database_url(url: Optional[str]) -> str:
         if '@' not in rest:
             return url  # No credentials to mask
         
-        # Split credentials and host info
-        creds_host = rest.split('@', 1)
-        if len(creds_host) != 2:
-            return url
+        # Split credentials and host info - split from the right to handle @ in passwords
+        at_pos = rest.rfind('@')
+        if at_pos == -1:
+            return url  # No @ found
             
-        credentials, host_db = creds_host
+        credentials = rest[:at_pos]
+        host_db = rest[at_pos + 1:]
         
         # Mask the password part while preserving username
         if ':' in credentials:
@@ -164,7 +165,7 @@ def mask_sensitive_dict(data: Dict[str, Any],
         elif isinstance(value, dict):
             # Recursively process nested dictionaries
             masked_data[key] = mask_sensitive_dict(value, sensitive_keys)
-        elif isinstance(value, str) and any(pattern in value for pattern in ['://', 'password=', 'secret=']):
+        elif isinstance(value, str) and any(pattern in value.lower() for pattern in ['://', 'password=', 'secret=']):
             # Check if string value might contain connection info
             masked_data[key] = mask_connection_string(value)
         else:
@@ -230,7 +231,7 @@ def get_safe_repr(obj: Any, mask_attrs: Optional[set] = None) -> str:
 
 # Pre-compiled regex patterns for performance
 _URL_PASSWORD_PATTERN = re.compile(r'(://[^:]+:)[^@]+(@)', re.IGNORECASE)
-_CONNECTION_PASSWORD_PATTERN = re.compile(r'(password|pwd|pass|secret|key)\s*=\s*[^\s;]+', re.IGNORECASE)
+_CONNECTION_PASSWORD_PATTERN = re.compile(r'\b(password|pwd|pass|secret)\s*=\s*[^\s;]+', re.IGNORECASE)
 
 
 def quick_mask_credentials(text: str) -> str:
