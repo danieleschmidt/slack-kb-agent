@@ -368,9 +368,9 @@ class DatabaseRepository:
             with self.db_manager.get_session() as session:
                 total_docs = session.query(DocumentModel).count()
                 
-                # Get source distribution
+                # Get source distribution - optimized to avoid N+1 query
                 source_stats = (
-                    session.query(DocumentModel.source, session.query(DocumentModel).filter(DocumentModel.source == DocumentModel.source).count())
+                    session.query(DocumentModel.source, func.count(DocumentModel.id))
                     .group_by(DocumentModel.source)
                     .all()
                 )

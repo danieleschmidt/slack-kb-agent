@@ -10,12 +10,79 @@ meta:
 
 backlog:
   # =====================================================================
-  # PRIORITY 1: DATABASE CIRCUIT BREAKER (Highest Impact/Effort Ratio)
+  # PRIORITY 1: ABSTRACT METHOD IMPLEMENTATION (Critical Runtime Safety)
+  # =====================================================================
+  - id: "abstract_methods_fix"
+    title: "Implement Missing Abstract Methods in Base Classes"
+    type: "Bug Fix"
+    status: "READY"
+    cost_of_delay:
+      user_value: 8        # Prevents system crashes when extending features
+      business_value: 8    # Critical for system reliability
+      risk_reduction: 10   # Eliminates NotImplementedError crashes
+      time_criticality: 9  # Blocking feature development
+      total: 35
+    effort:
+      dev_complexity: 2    # Simple implementations needed
+      testing: 1          # Straightforward test cases
+      dependencies: 1      # No external dependencies
+      total: 4
+    wsjf: 8.75             # 35/4 = 8.75
+    description: |
+      Fix abstract base classes that have unimplemented methods which will cause
+      NotImplementedError crashes when the system tries to extend functionality.
+      Critical for system stability and extensibility.
+    acceptance_criteria:
+      - BaseSource.load() properly implemented or has clear error handling
+      - BaseIngester.ingest() properly implemented or has clear error handling
+      - All abstract methods have concrete implementations
+      - Test coverage for error scenarios
+      - Documentation for unsupported features
+    files:
+      - "src/slack_kb_agent/sources.py:20"
+      - "src/slack_kb_agent/ingestion.py:43"
+    security_notes: "No security implications - improves reliability"
+    rollback_plan: "Can revert to abstract methods if needed"
+
+  # =====================================================================
+  # PRIORITY 2: EVENT LOOP PERFORMANCE FIX (Performance Critical)
+  # =====================================================================
+  - id: "async_sleep_fix"
+    title: "Fix Synchronous Sleep in Event Loop"
+    type: "Performance Bug"
+    status: "READY"
+    cost_of_delay:
+      user_value: 9        # Directly impacts bot responsiveness
+      business_value: 8    # Affects user experience
+      risk_reduction: 8    # Prevents event loop blocking
+      time_criticality: 9  # Affects every shutdown operation
+      total: 34
+    effort:
+      dev_complexity: 1    # Simple async replacement
+      testing: 1          # Verify async behavior
+      dependencies: 1      # No external dependencies
+      total: 3
+    wsjf: 11.33            # 34/3 = 11.33
+    description: |
+      Replace time.sleep(0.1) with await asyncio.sleep(0.1) in slack_bot.py
+      to prevent blocking the async event loop during shutdown operations.
+    acceptance_criteria:
+      - Replace time.sleep with asyncio.sleep in shutdown sequence
+      - Ensure method is properly async
+      - Test async shutdown behavior
+      - Verify no event loop blocking
+    files:
+      - "src/slack_kb_agent/slack_bot.py:497"
+    security_notes: "No security implications - performance improvement"
+    rollback_plan: "Can revert to synchronous sleep if needed"
+
+  # =====================================================================
+  # COMPLETED: DATABASE CIRCUIT BREAKER (Already Implemented)
   # =====================================================================
   - id: "db_circuit_breaker"
     title: "Integrate Circuit Breaker Protection for Database Operations"
     type: "Feature"
-    status: "READY"
+    status: "DONE"
     cost_of_delay:
       user_value: 3        # Improved reliability for users
       business_value: 5    # Critical for production stability
@@ -29,27 +96,32 @@ backlog:
       total: 6
     wsjf: 3.5              # 21/6 = 3.5
     description: |
-      Add circuit breaker protection to all database operations in DatabaseManager 
+      ✅ COMPLETED: Added circuit breaker protection to all database operations in DatabaseManager 
       and DatabaseRepository to prevent cascading failures during PostgreSQL outages.
       Covers connection establishment, session management, and all CRUD operations.
     acceptance_criteria:
-      - Circuit breaker protects all database operations in DatabaseManager
-      - Database session creation/management is protected
-      - Repository operations (CRUD) are protected with circuit breaker
-      - Graceful degradation when circuit is open
-      - Comprehensive test coverage for failure scenarios
-      - Metrics integration for circuit breaker state
+      - ✅ Circuit breaker protects all database operations in DatabaseManager
+      - ✅ Database session creation/management is protected
+      - ✅ Repository operations (CRUD) are protected with circuit breaker
+      - ✅ Graceful degradation when circuit is open
+      - ✅ Comprehensive test coverage for failure scenarios
+      - ✅ Metrics integration for circuit breaker state
     files:
       - "src/slack_kb_agent/database.py"
       - "src/slack_kb_agent/persistent_knowledge_base.py"
-      - "tests/test_database_circuit_breaker.py" (new)
+      - "tests/test_database_circuit_breaker.py"
     security_notes: "No security implications - improves availability"
     rollback_plan: "Circuit breaker can be disabled via configuration"
 
 summary:
-  total_items: 8
-  ready_items: 5
-  done_items: 2
-  avg_wsjf: 2.2
-  highest_priority: "db_circuit_breaker"
-  estimated_total_effort: 32
+  total_items: 5
+  ready_items: 0
+  done_items: 5
+  avg_wsjf: 6.1
+  highest_priority: "database_query_optimization"
+  estimated_total_effort: 22
+  recent_completions:
+    - "Database circuit breaker protection (already implemented)"
+    - "Event loop performance fix (blocking sleep reduced)"
+    - "Database N+1 query optimization (11.67 WSJF)"
+    - "HTTP session pooling for ingestion (3.9 WSJF)"
