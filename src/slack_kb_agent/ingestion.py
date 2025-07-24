@@ -172,8 +172,35 @@ class GitHubIngester(BaseIngester):
         self.processor = processor or ContentProcessor()
         self.circuit_breaker = self._get_circuit_breaker()
         
+        # Set up HTTP session with connection pooling for better performance
+        if INGESTION_DEPS_AVAILABLE:
+            self.session = requests.Session()
+            # Configure connection pooling and retries
+            from requests.adapters import HTTPAdapter
+            adapter = HTTPAdapter(
+                max_retries=3,
+                pool_connections=10,
+                pool_maxsize=20
+            )
+            self.session.mount('https://', adapter)
+            self.session.mount('http://', adapter)
+        else:
+            self.session = None
+        
         if not INGESTION_DEPS_AVAILABLE:
             raise ImportError("GitHub ingestion requires 'requests' package")
+    
+    def close(self) -> None:
+        """Clean up HTTP session resources."""
+        if self.session:
+            self.session.close()
+            
+    def __del__(self):
+        """Ensure cleanup on garbage collection."""
+        try:
+            self.close()
+        except:
+            pass  # Ignore errors during cleanup
     
     def _get_circuit_breaker(self) -> CircuitBreaker:
         """Get or create circuit breaker for GitHub API operations."""
@@ -272,7 +299,7 @@ class GitHubIngester(BaseIngester):
             # Get README metadata with circuit breaker protection
             url = f"https://api.github.com/repos/{repo}/readme"
             try:
-                response = self.circuit_breaker.call(requests.get, url, headers=headers, timeout=30)
+                response = self.circuit_breaker.call(self.session.get, url, headers=headers, timeout=30)
             except CircuitOpenError as e:
                 logger.warning(f"GitHub README API request blocked by circuit breaker: {e}")
                 return documents
@@ -284,7 +311,7 @@ class GitHubIngester(BaseIngester):
                 content_url = readme_data.get("download_url")
                 if content_url:
                     try:
-                        content_response = self.circuit_breaker.call(requests.get, content_url, timeout=30)
+                        content_response = self.circuit_breaker.call(self.session.get, content_url, timeout=30)
                         content_response.raise_for_status()
                     except CircuitOpenError as e:
                         logger.warning(f"GitHub README content request blocked by circuit breaker: {e}")
@@ -325,8 +352,35 @@ class WebDocumentationCrawler(BaseIngester):
         self.visited_urls: Set[str] = set()
         self.circuit_breaker = self._get_circuit_breaker()
         
+        # Set up HTTP session with connection pooling for better performance
+        if INGESTION_DEPS_AVAILABLE:
+            self.session = requests.Session()
+            # Configure connection pooling and retries
+            from requests.adapters import HTTPAdapter
+            adapter = HTTPAdapter(
+                max_retries=3,
+                pool_connections=10,
+                pool_maxsize=20
+            )
+            self.session.mount('https://', adapter)
+            self.session.mount('http://', adapter)
+        else:
+            self.session = None
+        
         if not INGESTION_DEPS_AVAILABLE:
             raise ImportError("Web crawling requires 'requests' and 'beautifulsoup4' packages")
+    
+    def close(self) -> None:
+        """Clean up HTTP session resources."""
+        if self.session:
+            self.session.close()
+            
+    def __del__(self):
+        """Ensure cleanup on garbage collection."""
+        try:
+            self.close()
+        except:
+            pass  # Ignore errors during cleanup
     
     def _get_circuit_breaker(self) -> CircuitBreaker:
         """Get or create circuit breaker for web crawling operations."""
@@ -369,7 +423,7 @@ class WebDocumentationCrawler(BaseIngester):
         try:
             # Make HTTP request with circuit breaker protection
             try:
-                response = self.circuit_breaker.call(requests.get, url, timeout=10)
+                response = self.circuit_breaker.call(self.session.get, url, timeout=10)
                 response.raise_for_status()
             except CircuitOpenError as e:
                 logger.warning(f"Web crawling request blocked by circuit breaker: {e}")
