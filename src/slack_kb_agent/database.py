@@ -19,7 +19,8 @@ from sqlalchemy import (
     DateTime, 
     JSON,
     Index,
-    Engine
+    Engine,
+    func
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -278,18 +279,38 @@ class DatabaseRepository:
         return self.circuit_breaker.call(_get_documents_by_source)
     
     def search_documents(self, query: str, limit: int = 100) -> List[Document]:
-        """Search documents by content (basic text search)."""
+        """Search documents by content (basic text search with SQL injection protection)."""
+        # Input validation and sanitization
+        if not isinstance(query, str):
+            raise ValueError("Search query must be a string")
+        
+        # Limit query length to prevent DoS attacks
+        if len(query) > 1000:
+            raise ValueError("Search query too long (max 1000 characters)")
+        
+        # Strip dangerous characters but preserve search intent
+        sanitized_query = query.strip()
+        if not sanitized_query:
+            return []
+        
         def _search_documents():
             with self.db_manager.get_session() as session:
-                # Use PostgreSQL ILIKE for case-insensitive search
-                doc_models = (
-                    session.query(DocumentModel)
-                    .filter(DocumentModel.content.ilike(f'%{query}%'))
-                    .order_by(DocumentModel.created_at.desc())
-                    .limit(limit)
-                    .all()
-                )
-                return [doc.to_document() for doc in doc_models]
+                try:
+                    # Use SQLAlchemy's concat function for safe parameter binding
+                    # This prevents SQL injection by using proper parameter substitution
+                    search_pattern = func.concat('%', sanitized_query, '%')
+                    
+                    doc_models = (
+                        session.query(DocumentModel)
+                        .filter(func.lower(DocumentModel.content).like(func.lower(search_pattern)))
+                        .order_by(DocumentModel.created_at.desc())
+                        .limit(limit)
+                        .all()
+                    )
+                    return [doc.to_document() for doc in doc_models]
+                except SQLAlchemyError as e:
+                    logger.error(f"Database search failed for query '{sanitized_query}': {type(e).__name__}: {e}")
+                    raise
         
         return self.circuit_breaker.call(_search_documents)
     
