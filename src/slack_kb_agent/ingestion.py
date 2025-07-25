@@ -49,12 +49,45 @@ class ContentProcessor:
     def __init__(self):
         # Patterns for sensitive content detection
         self.sensitive_patterns = [
+            # Original patterns
             r'api[_\-\s]*key[_\-\s]*[:=]\s*["\']?([a-zA-Z0-9_\-]{10,})["\']?',
             r'password[_\-\s]*[:=]\s*["\']?([^\s"\']{6,})["\']?',
             r'token[_\-\s]*[:=]\s*["\']?([a-zA-Z0-9_\-]{15,})["\']?',
             r'secret[_\-\s]*[:=]\s*["\']?([a-zA-Z0-9_\-]{10,})["\']?',
             r'(sk-[a-zA-Z0-9\-]{10,})',  # OpenAI-style API keys
             r'(xox[bpoas]-[a-zA-Z0-9\-]{10,})',  # Slack tokens
+            
+            # Enhanced patterns for base64-encoded secrets
+            r'[a-zA-Z0-9_\-]*[:=]\s*["\']?([A-Za-z0-9+/]{20,}={0,2})["\']?',  # Base64 strings
+            r'base64[_\-\s]*[:=]\s*["\']?([A-Za-z0-9+/]{16,}={0,2})["\']?',
+            r'[a-zA-Z0-9_]*_b64[_\s]*[:=]\s*["\']?([A-Za-z0-9+/]{16,}={0,2})["\']?',
+            r'[a-zA-Z0-9_]*_encoded[_\s]*[:=]\s*["\']?([A-Za-z0-9+/]{16,}={0,2})["\']?',
+            
+            # Environment variable references  
+            r'\$\{([A-Z_][A-Z0-9_]*)\}',  # ${VAR_NAME}
+            r'\$([A-Z_][A-Z0-9_]*)',  # $VAR_NAME
+            r'export\s+([A-Z_][A-Z0-9_]*)=',  # export VAR=
+            
+            # JWT tokens (3 parts separated by dots)
+            r'(eyJ[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+)',
+            r'Bearer\s+(eyJ[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+)',
+            
+            # AWS credentials
+            r'(AKIA[0-9A-Z]{16})',  # AWS Access Key ID
+            r'aws[_\-]?secret[_\-]?access[_\-]?key[_\s]*[:=]\s*["\']?([a-zA-Z0-9/+]{40})["\']?',
+            
+            # GitHub tokens
+            r'(ghp_[a-zA-Z0-9]{36})',  # GitHub personal access token
+            r'(gho_[a-zA-Z0-9]{36})',  # GitHub OAuth token
+            r'(ghu_[a-zA-Z0-9]{36})',  # GitHub user token
+            r'(ghs_[a-zA-Z0-9]{36})',  # GitHub server token
+            r'(ghr_[a-zA-Z0-9]{36})',  # GitHub refresh token
+            
+            # Docker Hub tokens
+            r'(dckr_pat_[a-zA-Z0-9\-_]{22,})',  # Docker Hub personal access token
+            
+            # Additional Slack token formats
+            r'(xapp-\d+-[A-Z0-9]+-\d+-[a-zA-Z0-9]{32,})',  # Slack app-level token
         ]
     
     def process_markdown(self, content: str) -> str:
@@ -199,8 +232,12 @@ class GitHubIngester(BaseIngester):
         """Ensure cleanup on garbage collection."""
         try:
             self.close()
-        except:
-            pass  # Ignore errors during cleanup
+        except (ConnectionError, RuntimeError, AttributeError, OSError) as e:
+            # Log specific cleanup errors for debugging while preventing crashes
+            logger.debug(f"GitHub ingester cleanup warning: {type(e).__name__}: {e}")
+        except Exception as e:
+            # Catch any other unexpected exceptions during cleanup
+            logger.warning(f"Unexpected error during GitHub ingester cleanup: {type(e).__name__}: {e}")
     
     def _get_circuit_breaker(self) -> CircuitBreaker:
         """Get or create circuit breaker for GitHub API operations."""
@@ -379,8 +416,12 @@ class WebDocumentationCrawler(BaseIngester):
         """Ensure cleanup on garbage collection."""
         try:
             self.close()
-        except:
-            pass  # Ignore errors during cleanup
+        except (ConnectionError, RuntimeError, AttributeError, OSError) as e:
+            # Log specific cleanup errors for debugging while preventing crashes
+            logger.debug(f"Web crawler cleanup warning: {type(e).__name__}: {e}")
+        except Exception as e:
+            # Catch any other unexpected exceptions during cleanup
+            logger.warning(f"Unexpected error during web crawler cleanup: {type(e).__name__}: {e}")
     
     def _get_circuit_breaker(self) -> CircuitBreaker:
         """Get or create circuit breaker for web crawling operations."""
