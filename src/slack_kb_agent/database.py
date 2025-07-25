@@ -20,7 +20,8 @@ from sqlalchemy import (
     JSON,
     Index,
     Engine,
-    func
+    func,
+    text
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -377,7 +378,7 @@ class DatabaseRepository:
                 
                 # Estimate database size (rough approximation)
                 size_query = session.execute(
-                    "SELECT pg_total_relation_size('documents') as size"
+                    text("SELECT pg_total_relation_size('documents') as size")
                 ).fetchone()
                 estimated_size = size_query[0] if size_query else 0
                 
