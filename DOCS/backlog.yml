@@ -15,7 +15,7 @@ backlog:
   - id: "abstract_methods_fix"
     title: "Implement Missing Abstract Methods in Base Classes"
     type: "Bug Fix"
-    status: "READY"
+    status: "DONE"
     cost_of_delay:
       user_value: 8        # Prevents system crashes when extending features
       business_value: 8    # Critical for system reliability
@@ -50,7 +50,7 @@ backlog:
   - id: "async_sleep_fix"
     title: "Fix Synchronous Sleep in Event Loop"
     type: "Performance Bug"
-    status: "READY"
+    status: "DONE"
     cost_of_delay:
       user_value: 9        # Directly impacts bot responsiveness
       business_value: 8    # Affects user experience
@@ -75,6 +75,39 @@ backlog:
       - "src/slack_kb_agent/slack_bot.py:497"
     security_notes: "No security implications - performance improvement"
     rollback_plan: "Can revert to synchronous sleep if needed"
+
+  # =====================================================================
+  # PRIORITY 3: PYPROJECT.TOML CONFIGURATION FIX (Build System)
+  # =====================================================================
+  - id: "pyproject_config_fix"
+    title: "Fix pyproject.toml Configuration Error"
+    type: "Bug Fix"
+    status: "DONE"
+    cost_of_delay:
+      user_value: 5        # Affects package installation
+      business_value: 8    # Critical for deployment and CI/CD
+      risk_reduction: 8    # Prevents build failures
+      time_criticality: 9  # Blocking development workflow
+      total: 30
+    effort:
+      dev_complexity: 1    # Simple configuration fix
+      testing: 1          # Verify package builds
+      dependencies: 1      # No external dependencies
+      total: 3
+    wsjf: 10.0             # 30/3 = 10.0
+    description: |
+      ✅ COMPLETED: Fixed pyproject.toml configuration where requires-python was incorrectly 
+      placed under [project.scripts] instead of [project]. This was preventing pip install 
+      and package building from working correctly.
+    acceptance_criteria:
+      - ✅ requires-python moved to correct [project] section
+      - ✅ Package can be installed with pip install -e .
+      - ✅ pyproject.toml validates correctly
+      - ✅ Build system works without errors
+    files:
+      - "pyproject.toml"
+    security_notes: "No security implications - build configuration fix"
+    rollback_plan: "Can revert to previous configuration if needed"
 
   # =====================================================================
   # COMPLETED: DATABASE CIRCUIT BREAKER (Already Implemented)
@@ -113,15 +146,119 @@ backlog:
     security_notes: "No security implications - improves availability"
     rollback_plan: "Circuit breaker can be disabled via configuration"
 
+  # =====================================================================
+  # PRIORITY 4: RAW SQL QUERY SECURITY FIX (Security Critical)
+  # =====================================================================
+  - id: "raw_sql_security_fix"
+    title: "Replace Raw SQL Query with Parameterized Query"
+    type: "Security Fix"
+    status: "DONE"
+    cost_of_delay:
+      user_value: 2        # Low impact on functionality
+      business_value: 3    # Moderate impact on data integrity
+      risk_reduction: 4    # Prevents SQL injection patterns
+      time_criticality: 3  # Should be addressed soon
+      total: 12
+    effort:
+      dev_complexity: 1    # Simple SQLAlchemy text() replacement
+      testing: 1          # Verify database stats work
+      dependencies: 1      # No external dependencies
+      total: 3
+    wsjf: 4.0              # 12/3 = 4.0
+    description: |
+      ✅ COMPLETED: Replaced raw SQL execution in database statistics with SQLAlchemy's text() function 
+      for proper parameterization. The fix improves code security posture by eliminating raw SQL patterns.
+    acceptance_criteria:
+      - ✅ Replace raw SQL with SQLAlchemy text() function
+      - ✅ Add proper parameter escaping if needed  
+      - ✅ Verify database statistics functionality works
+      - ✅ Add test coverage for the fixed query
+    files:
+      - "src/slack_kb_agent/database.py:379-381"
+    security_notes: "Prevents SQL injection patterns and improves code security posture"
+    rollback_plan: "Can revert to raw SQL if needed"
+
+  # =====================================================================
+  # PRIORITY 5: ENHANCED SENSITIVE DATA DETECTION (Security Enhancement)
+  # =====================================================================
+  - id: "sensitive_data_detection_enhancement"
+    title: "Enhance Sensitive Content Pattern Detection"
+    type: "Security Enhancement"
+    status: "READY"
+    cost_of_delay:
+      user_value: 3        # Affects data privacy
+      business_value: 3    # Data protection compliance
+      risk_reduction: 2    # Moderate risk reduction
+      time_criticality: 2  # Not urgent
+      total: 10
+    effort:
+      dev_complexity: 2    # Need to research and implement new patterns
+      testing: 2          # Test various secret formats
+      dependencies: 1      # No external dependencies
+      total: 5
+    wsjf: 2.0              # 10/5 = 2.0
+    description: |
+      Enhance regex patterns in ContentProcessor to detect encoded secrets,
+      base64-encoded credentials, and environment variable references that
+      might leak into the knowledge base during ingestion.
+    acceptance_criteria:
+      - Add patterns for base64-encoded secrets
+      - Detect environment variable references (${VAR}, $VAR)
+      - Add patterns for JWT tokens and other common formats
+      - Test against various encoding schemes
+      - Verify no false positives on legitimate content
+    files:
+      - "src/slack_kb_agent/ingestion.py:51-58"
+    security_notes: "Improves data privacy and prevents credential leakage"
+    rollback_plan: "Can revert to original patterns if false positives occur"
+
+  # =====================================================================
+  # PRIORITY 6: EXCEPTION HANDLING IMPROVEMENTS (Code Quality)
+  # =====================================================================
+  - id: "exception_handling_specificity"
+    title: "Replace Broad Exception Handling with Specific Exceptions"
+    type: "Code Quality"
+    status: "READY"
+    cost_of_delay:
+      user_value: 2        # Doesn't affect functionality directly
+      business_value: 2    # Minor impact on maintainability
+      risk_reduction: 2    # Low security risk
+      time_criticality: 2  # Can be addressed in maintenance cycle
+      total: 8
+    effort:
+      dev_complexity: 1    # Identify specific exceptions
+      testing: 1          # Verify error handling works
+      dependencies: 1      # No external dependencies
+      total: 3
+    wsjf: 2.67             # 8/3 = 2.67
+    description: |
+      Replace bare except clauses in resource cleanup code with specific 
+      exception handling or proper logging to improve debugging capability
+      without hiding critical errors.
+    acceptance_criteria:
+      - Replace bare except: pass with specific exceptions
+      - Add logging for suppressed exceptions where appropriate
+      - Verify cleanup still works in error scenarios
+      - Test error propagation doesn't break resource cleanup
+    files:
+      - "src/slack_kb_agent/ingestion.py:202"
+      - "src/slack_kb_agent/ingestion.py:382"
+    security_notes: "Improves debugging and error visibility"
+    rollback_plan: "Can revert to broad exception handling if needed"
+
 summary:
-  total_items: 5
-  ready_items: 0
+  total_items: 7
+  ready_items: 2
   done_items: 5
-  avg_wsjf: 6.1
-  highest_priority: "database_query_optimization"
-  estimated_total_effort: 22
+  avg_wsjf: 5.4
+  highest_priority: "exception_handling_specificity"
+  estimated_total_effort: 21
   recent_completions:
-    - "Database circuit breaker protection (already implemented)"
-    - "Event loop performance fix (blocking sleep reduced)"
-    - "Database N+1 query optimization (11.67 WSJF)"
-    - "HTTP session pooling for ingestion (3.9 WSJF)"
+    - "raw_sql_security_fix (4.0 WSJF) - 2025-07-25"
+    - "pyproject.toml configuration fix (10.0 WSJF) - 2025-07-25"
+    - "Abstract method implementation fix (8.75 WSJF) - verified already completed"
+    - "Async sleep in event loop fix (11.33 WSJF) - verified already completed"
+    - "Database circuit breaker protection (3.5 WSJF) - already implemented"
+  remaining_actionable_items:
+    - "exception_handling_specificity (2.67 WSJF) - Code quality improvement"
+    - "sensitive_data_detection_enhancement (2.0 WSJF) - Security enhancement"
