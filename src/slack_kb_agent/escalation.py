@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Callable, Iterable
 
@@ -24,20 +23,31 @@ class SlackNotifier:
         self.logger = logger or logging.getLogger(__name__)
 
     def _default_sender(self, member_id: str, text: str) -> None:
-        from urllib import request
+        import requests
+        from requests.exceptions import ConnectionError, HTTPError, Timeout, RequestException
 
-        payload = json.dumps({"channel": member_id, "text": text}).encode("utf-8")
-        req = request.Request(
-            "https://slack.com/api/chat.postMessage",
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {self.token}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        with request.urlopen(req, timeout=5) as resp:  # nosec B310
-            resp.read()
+        payload = {"channel": member_id, "text": text}
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
+            "User-Agent": "slack-kb-agent/1.0"  # Proper user agent
+        }
+        
+        try:
+            response = requests.post(
+                "https://slack.com/api/chat.postMessage",
+                json=payload,
+                headers=headers,
+                timeout=5,
+                verify=True  # Explicit SSL certificate verification
+            )
+            response.raise_for_status()  # Raise exception for HTTP errors
+        except (ConnectionError, Timeout) as exc:
+            raise RuntimeError(f"Network error sending Slack notification: {exc}") from exc
+        except HTTPError as exc:
+            raise RuntimeError(f"HTTP error sending Slack notification: {exc}") from exc
+        except RequestException as exc:
+            raise RuntimeError(f"Request error sending Slack notification: {exc}") from exc
 
     def notify(self, member_id: str, text: str) -> bool:
         """Send an escalation message to the given member."""
