@@ -157,7 +157,12 @@ class FileIngester(BaseIngester):
     def ingest_file(self, file_path: Path) -> Optional[Document]:
         """Ingest a single file."""
         try:
-            content = file_path.read_text(encoding='utf-8', errors='ignore')
+            # Use 'replace' instead of 'ignore' for better error visibility
+            content = file_path.read_text(encoding='utf-8', errors='replace')
+            
+            # Log if encoding replacement characters are found
+            if '�' in content:
+                logger.warning(f"Encoding issues detected in file {file_path}: invalid UTF-8 bytes replaced with � characters")
             
             # Process based on file type
             if file_path.suffix.lower() == '.md':
