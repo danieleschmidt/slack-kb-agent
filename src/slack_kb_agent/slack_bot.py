@@ -493,32 +493,8 @@ I can search through documentation, code comments, GitHub issues, and team knowl
                     logger.warning(f"Error finalizing analytics: {analytics_error}")
             
             # Give any remaining background tasks a moment to complete
-            # Handle both sync and async contexts gracefully
-            try:
-                import asyncio
-                # Check if we're in an async context and if there's a running loop
-                try:
-                    loop = asyncio.get_running_loop()
-                    # We're in an async context - schedule the sleep to avoid blocking
-                    import threading
-                    import time
-                    
-                    def _delayed_continuation():
-                        time.sleep(0.01)
-                    
-                    # Run sleep in thread to avoid blocking event loop
-                    thread = threading.Thread(target=_delayed_continuation)
-                    thread.start()
-                    thread.join(timeout=0.02)  # Don't wait longer than 20ms
-                    
-                except RuntimeError:
-                    # No running event loop - safe to use synchronous sleep
-                    import time
-                    time.sleep(0.01)
-            except ImportError:
-                # asyncio not available - use synchronous sleep
-                import time
-                time.sleep(0.01)
+            import time
+            time.sleep(0.01)
             
             logger.info("Bot server stopped gracefully")
             
