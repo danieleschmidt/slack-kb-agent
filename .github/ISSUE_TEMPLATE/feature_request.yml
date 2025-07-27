@@ -1,0 +1,168 @@
+name: Feature Request
+description: Suggest a new feature or enhancement
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature! Please provide as much detail as possible to help us understand your request.
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Pre-flight Checklist
+      description: Please confirm these before submitting
+      options:
+        - label: I have searched for similar feature requests in the issue tracker
+          required: true
+        - label: I have checked the roadmap and documentation
+          required: true
+        - label: This feature aligns with the project's goals
+          required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Feature Category
+      description: What category does this feature belong to?
+      options:
+        - Core Functionality
+        - User Interface
+        - Performance
+        - Security
+        - Documentation
+        - Developer Experience
+        - Integration
+        - Monitoring/Observability
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? What is the current limitation?
+      placeholder: "As a user, I am frustrated when..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like to see implemented
+      placeholder: "I would like to see..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What other solutions have you considered?
+      placeholder: "I have also considered..."
+
+  - type: textarea
+    id: use-cases
+    attributes:
+      label: Use Cases
+      description: |
+        Provide specific use cases or user stories that would benefit from this feature
+      placeholder: |
+        1. As a team lead, I want to...
+        2. As a developer, I need to...
+        3. As an admin, I would like to...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature to you?
+      options:
+        - Low - Nice to have
+        - Medium - Would improve my workflow
+        - High - Important for my use case
+        - Critical - Blocking my adoption
+    validations:
+      required: true
+
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Detailed Requirements
+      description: |
+        Provide detailed requirements for the feature, including:
+        - Functional requirements
+        - Non-functional requirements (performance, security, etc.)
+        - Acceptance criteria
+      placeholder: |
+        Functional Requirements:
+        - The feature should...
+        - Users should be able to...
+        
+        Non-functional Requirements:
+        - Performance: ...
+        - Security: ...
+        - Usability: ...
+        
+        Acceptance Criteria:
+        - [ ] Given that..., when..., then...
+
+  - type: textarea
+    id: mockups
+    attributes:
+      label: Mockups/Wireframes
+      description: |
+        If applicable, add mockups, wireframes, or examples from other applications
+        You can drag and drop images here
+
+  - type: input
+    id: affected-users
+    attributes:
+      label: Affected Users
+      description: How many users do you think would benefit from this feature?
+      placeholder: "All users / Power users / Administrators / etc."
+
+  - type: checkboxes
+    id: implementation
+    attributes:
+      label: Implementation Considerations
+      description: Check all that apply
+      options:
+        - label: This feature requires database changes
+        - label: This feature requires API changes
+        - label: This feature affects the user interface
+        - label: This feature requires new dependencies
+        - label: This feature affects security
+        - label: This feature affects performance
+        - label: This feature requires documentation updates
+
+  - type: textarea
+    id: technical-notes
+    attributes:
+      label: Technical Notes
+      description: |
+        Any technical considerations, constraints, or implementation ideas?
+        This is optional but helpful for developers
+
+  - type: input
+    id: contact
+    attributes:
+      label: Contact Details
+      description: How can we get in touch with you for clarification?
+      placeholder: ex. email@example.com
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      description: Would you be interested in contributing?
+      options:
+        - label: I am willing to submit a PR for this feature
+        - label: I can help with testing this feature
+        - label: I can help with documentation for this feature
+        - label: I can provide domain expertise or requirements clarification

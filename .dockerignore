@@ -1,0 +1,81 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+venv
+.venv
+ENV
+env.bak
+venv.bak
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.egg-info
+dist
+build
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+docs/
+!README.md
+
+# Development
+.env
+.env.*
+!.env.example
+logs/
+data/
+*.log
+
+# Testing
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+
+# CI/CD
+.github/
+.pre-commit-config.yaml
+
+# Development container
+.devcontainer/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Security
+.secrets
+*.key
+*.pem
+
+# Backups
+*.backup
+*.bak
+
+# Node.js (if any)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
