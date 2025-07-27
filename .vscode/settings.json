@@ -1,0 +1,58 @@
+{
+  "python.defaultInterpreterPath": "./venv/bin/python",
+  "python.linting.enabled": true,
+  "python.linting.pylintEnabled": false,
+  "python.linting.flake8Enabled": false,
+  "python.linting.ruffEnabled": true,
+  "python.formatting.provider": "black",
+  "python.formatting.blackArgs": ["--line-length=88"],
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
+  "python.analysis.autoImportCompletions": true,
+  "python.analysis.typeCheckingMode": "basic",
+  "editor.formatOnSave": true,
+  "editor.formatOnPaste": true,
+  "editor.rulers": [88],
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": true,
+    "source.fixAll.ruff": true
+  },
+  "files.associations": {
+    "*.yml": "yaml",
+    "*.yaml": "yaml",
+    "Dockerfile*": "dockerfile",
+    ".env*": "properties"
+  },
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-workflow.json": ".github/workflows/*.yml",
+    "https://json.schemastore.org/docker-compose.json": "docker-compose*.yml"
+  },
+  "search.exclude": {
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/CVS": true,
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true,
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/node_modules": true,
+    "**/venv": true,
+    "**/env": true,
+    "**/.env": true,
+    "**/dist": true,
+    "**/build": true,
+    "**/.pytest_cache": true,
+    "**/.mypy_cache": true,
+    "**/.ruff_cache": true
+  },
+  "python.testing.autoTestDiscoverOnSaveEnabled": true,
+  "git.ignoreLimitWarning": true,
+  "git.autofetch": true,
+  "extensions.ignoreRecommendations": false
+}

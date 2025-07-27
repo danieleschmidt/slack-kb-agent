@@ -1,0 +1,281 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run security scans daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  # Static Application Security Testing (SAST)
+  sast:
+    name: SAST - CodeQL
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'python' ]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ matrix.language }}
+        queries: security-extended,security-and-quality
+
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v3
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:${{matrix.language}}"
+
+  # Dependency Scanning
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety pip-audit
+
+    - name: Run Safety check
+      run: |
+        safety check --json --output safety-report.json
+      continue-on-error: true
+
+    - name: Run pip-audit
+      run: |
+        pip-audit --format=json --output=pip-audit-report.json
+      continue-on-error: true
+
+    - name: Upload dependency scan results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: dependency-scan-reports
+        path: |
+          safety-report.json
+          pip-audit-report.json
+
+  # Secret Scanning
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Run GitGuardian scan
+      uses: GitGuardian/ggshield-action@v1.25.0
+      env:
+        GITHUB_PUSH_BEFORE_SHA: ${{ github.event.before }}
+        GITHUB_PUSH_BASE_SHA: ${{ github.event.base }}
+        GITHUB_PULL_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
+
+  # Container Security Scanning
+  container-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build Docker image
+      run: |
+        docker build -t slack-kb-agent:security-scan .
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'slack-kb-agent:security-scan'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+    - name: Run Trivy for high/critical vulnerabilities
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'slack-kb-agent:security-scan'
+        format: 'table'
+        severity: 'HIGH,CRITICAL'
+        exit-code: '1'
+
+  # License Compliance Check
+  license-check:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[llm]"
+        pip install pip-licenses
+
+    - name: Check licenses
+      run: |
+        pip-licenses --format=json --output-file=licenses.json
+        pip-licenses --format=plain-vertical
+
+    - name: Upload license report
+      uses: actions/upload-artifact@v3
+      with:
+        name: license-report
+        path: licenses.json
+
+  # SBOM Generation
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[llm]"
+        pip install cyclonedx-bom
+
+    - name: Generate SBOM
+      run: |
+        cyclonedx-py -o slack-kb-agent-sbom.json
+
+    - name: Upload SBOM
+      uses: actions/upload-artifact@v3
+      with:
+        name: sbom
+        path: slack-kb-agent-sbom.json
+
+  # Security Policy Validation
+  policy-check:
+    name: Security Policy Check
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check for required security files
+      run: |
+        echo "🔍 Checking for required security files..."
+        
+        # Check for SECURITY.md
+        if [ ! -f SECURITY.md ]; then
+          echo "❌ SECURITY.md not found"
+          exit 1
+        else
+          echo "✅ SECURITY.md found"
+        fi
+        
+        # Check for .env.example
+        if [ ! -f .env.example ]; then
+          echo "❌ .env.example not found"
+          exit 1
+        else
+          echo "✅ .env.example found"
+        fi
+        
+        # Check for pre-commit config
+        if [ ! -f .pre-commit-config.yaml ]; then
+          echo "❌ .pre-commit-config.yaml not found"
+          exit 1
+        else
+          echo "✅ .pre-commit-config.yaml found"
+        fi
+
+    - name: Validate environment variables
+      run: |
+        echo "🔍 Validating environment variable patterns..."
+        
+        # Check that no secrets are hardcoded
+        if grep -r "sk-" src/ --include="*.py"; then
+          echo "❌ Found potential API keys in source code"
+          exit 1
+        fi
+        
+        if grep -r "xoxb-" src/ --include="*.py"; then
+          echo "❌ Found potential Slack tokens in source code"
+          exit 1
+        fi
+        
+        echo "✅ No hardcoded secrets found"
+
+  # Compliance Report
+  compliance-report:
+    name: Generate Compliance Report
+    runs-on: ubuntu-latest
+    needs: [sast, dependency-scan, secret-scan, container-scan, license-check, policy-check]
+    if: always()
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+
+    - name: Generate compliance report
+      run: |
+        echo "# Security Compliance Report" > compliance-report.md
+        echo "Generated on: $(date)" >> compliance-report.md
+        echo "" >> compliance-report.md
+        
+        echo "## Summary" >> compliance-report.md
+        echo "- SAST: ${{ needs.sast.result }}" >> compliance-report.md
+        echo "- Dependency Scan: ${{ needs.dependency-scan.result }}" >> compliance-report.md
+        echo "- Secret Scan: ${{ needs.secret-scan.result }}" >> compliance-report.md
+        echo "- Container Scan: ${{ needs.container-scan.result }}" >> compliance-report.md
+        echo "- License Check: ${{ needs.license-check.result }}" >> compliance-report.md
+        echo "- Policy Check: ${{ needs.policy-check.result }}" >> compliance-report.md
+        
+        echo "" >> compliance-report.md
+        echo "## Artifacts" >> compliance-report.md
+        echo "The following security scan results are available as artifacts:" >> compliance-report.md
+        echo "- SARIF reports from CodeQL and Trivy" >> compliance-report.md
+        echo "- Dependency vulnerability reports" >> compliance-report.md
+        echo "- License compliance report" >> compliance-report.md
+        echo "- Software Bill of Materials (SBOM)" >> compliance-report.md
+
+    - name: Upload compliance report
+      uses: actions/upload-artifact@v3
+      with:
+        name: compliance-report
+        path: compliance-report.md

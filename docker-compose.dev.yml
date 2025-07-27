@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  # Development application
+  slack-kb-agent-dev:
+    build:
+      context: .
+      target: development
+    container_name: slack-kb-agent-dev
+    restart: "no"
+    ports:
+      - "3000:3000"
+      - "9090:9090"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/slack_kb_agent_dev
+      - REDIS_URL=redis://redis:6379/1
+      - TESTING=true
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/.venv  # Exclude venv from mount
+      - dev_logs:/app/logs
+      - dev_data:/app/data
+    networks:
+      - slack-kb-dev-network
+    command: python bot.py
+
+  # PostgreSQL for development
+  postgres:
+    image: postgres:15-alpine
+    container_name: slack-kb-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: slack_kb_agent_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"  # Different port to avoid conflicts
+    networks:
+      - slack-kb-dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for development
+  redis:
+    image: redis:7-alpine
+    container_name: slack-kb-redis-dev
+    restart: unless-stopped
+    ports:
+      - "6380:6379"  # Different port to avoid conflicts
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - slack-kb-dev-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Test runner service
+  test-runner:
+    build:
+      context: .
+      target: development
+    container_name: slack-kb-test-runner
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/slack_kb_agent_test
+      - REDIS_URL=redis://redis:6379/2
+      - TESTING=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    networks:
+      - slack-kb-dev-network
+    command: pytest tests/ -v
+    profiles:
+      - testing
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+  dev_logs:
+  dev_data:
+
+networks:
+  slack-kb-dev-network:
+    driver: bridge
