@@ -294,6 +294,8 @@ class KnowledgeBase:
     def from_dict(cls, data: dict[str, list[dict]], max_documents: Optional[int] = None) -> "KnowledgeBase":
         """Create a knowledge base from a dictionary."""
         kb = cls(max_documents=max_documents)
+        if not isinstance(data, dict):
+            return kb
         for item in data.get("documents", []):
             if not isinstance(item, dict):
                 continue
