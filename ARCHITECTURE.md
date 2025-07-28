@@ -216,6 +216,25 @@ Key architectural decisions are documented in `docs/adr/` directory:
 - Efficient memory usage with configurable limits
 - Optimized database queries with indexing
 
+## SDLC Integration
+
+### Development Lifecycle
+- **Code Quality**: Automated formatting (Black), linting (Ruff), type checking (MyPy)
+- **Security**: Pre-commit hooks with Bandit, GitGuardian secret scanning
+- **Testing**: Comprehensive test suite with pytest, coverage reporting
+- **Documentation**: Automated API docs generation, ADR tracking
+
+### CI/CD Pipeline
+- **Pull Request Validation**: Automated testing, security scanning, code review
+- **Release Automation**: Semantic versioning, changelog generation, deployment
+- **Monitoring**: Performance metrics, error tracking, security monitoring
+
+### Quality Gates
+- Minimum 80% test coverage for new code
+- All security scans must pass before merge
+- Peer review required for all changes
+- Automated dependency vulnerability scanning
+
 ## Future Considerations
 
 ### Planned Enhancements
