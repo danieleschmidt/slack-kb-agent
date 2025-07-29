@@ -43,6 +43,17 @@ security: ## Run security scans
 	$(PYTHON) -m safety check --json --output security-deps.json
 	@echo "Security reports generated: security-report.json, security-deps.json"
 
+security-full: security ## Run comprehensive security scans
+	@echo "🔒 Running comprehensive security scans..."
+	$(PYTHON) scripts/generate-sbom.py --output sbom.json --summary
+	@if command -v trivy >/dev/null 2>&1; then \
+		echo "Scanning Docker image with Trivy..."; \
+		trivy image --format json --output trivy-report.json $(DOCKER_IMAGE); \
+	else \
+		echo "Trivy not installed, skipping container scan"; \
+	fi
+	@echo "Security scan complete. Check: security-report.json, security-deps.json, sbom.json"
+
 docs: ## Generate documentation
 	@echo "📚 Generating documentation..."
 	@echo "API documentation would be generated here"
@@ -104,6 +115,18 @@ update-deps: ## Update dependencies
 benchmark: ## Run performance benchmarks
 	@echo "🏃 Running performance benchmarks..."
 	$(PYTHON) -m pytest tests/ -v -m benchmark
+
+performance: ## Run performance tests
+	@echo "⚡ Running performance test suite..."
+	$(PYTHON) -m pytest tests/performance/ -v --tb=short
+
+load-test: ## Run load tests
+	@echo "📈 Running load tests..."
+	$(PYTHON) -m pytest tests/ -v -m load_test
+
+stress-test: ## Run stress tests
+	@echo "💪 Running stress tests..."
+	$(PYTHON) -m pytest tests/ -v -m stress_test
 
 monitor: ## Show monitoring dashboard
 	@echo "📊 Monitoring endpoints:"

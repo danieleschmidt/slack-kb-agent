@@ -1,0 +1,11 @@
+# Trivy security scanner ignore file
+# Ignore low-severity vulnerabilities in development dependencies
+
+# Development-only vulnerabilities
+CVE-2024-XXXX-DEV
+
+# Known false positives
+CVE-2023-XXXX-FALSE-POSITIVE
+
+# Accepted risks with documented mitigation
+# CVE-YYYY-MMMM - Risk accepted: Limited scope, requires authentication
