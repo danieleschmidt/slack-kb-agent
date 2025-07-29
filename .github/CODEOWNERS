@@ -1,0 +1,56 @@
+# Global code owners
+* @terragonlabs/core-team
+
+# Security-sensitive files
+.github/workflows/ @terragonlabs/security-team @terragonlabs/devops-team
+.github/SECURITY.md @terragonlabs/security-team
+.github/dependabot.yml @terragonlabs/security-team
+SECURITY.md @terragonlabs/security-team
+scripts/generate-sbom.py @terragonlabs/security-team
+
+# Infrastructure and deployment
+Dockerfile @terragonlabs/devops-team
+docker-compose*.yml @terragonlabs/devops-team
+monitoring/ @terragonlabs/devops-team @terragonlabs/sre-team
+kubernetes/ @terragonlabs/devops-team
+.devcontainer/ @terragonlabs/devops-team
+
+# Database and migrations
+migrations/ @terragonlabs/database-team @terragonlabs/core-team
+alembic.ini @terragonlabs/database-team
+
+# Core application code
+src/slack_kb_agent/auth.py @terragonlabs/security-team @terragonlabs/core-team
+src/slack_kb_agent/security_utils.py @terragonlabs/security-team @terragonlabs/core-team
+src/slack_kb_agent/database.py @terragonlabs/database-team @terragonlabs/core-team
+src/slack_kb_agent/models.py @terragonlabs/database-team @terragonlabs/core-team
+
+# Performance-critical components
+src/slack_kb_agent/vector_search.py @terragonlabs/ml-team @terragonlabs/core-team
+src/slack_kb_agent/search_index.py @terragonlabs/performance-team @terragonlabs/core-team
+src/slack_kb_agent/cache.py @terragonlabs/performance-team @terragonlabs/core-team
+
+# Configuration and build files
+pyproject.toml @terragonlabs/core-team @terragonlabs/devops-team
+Makefile @terragonlabs/devops-team
+tox.ini @terragonlabs/devops-team
+.pre-commit-config.yaml @terragonlabs/devops-team
+
+# Documentation
+*.md @terragonlabs/docs-team @terragonlabs/core-team
+docs/ @terragonlabs/docs-team
+
+# Testing
+tests/ @terragonlabs/qa-team @terragonlabs/core-team
+tests/security/ @terragonlabs/security-team @terragonlabs/qa-team
+tests/performance/ @terragonlabs/performance-team @terragonlabs/qa-team
+
+# Package and release management
+CHANGELOG.md @terragonlabs/release-team @terragonlabs/core-team
+.github/workflows/release.yml @terragonlabs/release-team @terragonlabs/devops-team
+
+# Governance files
+CONTRIBUTING.md @terragonlabs/maintainers
+CODE_OF_CONDUCT.md @terragonlabs/maintainers
+.github/ISSUE_TEMPLATE/ @terragonlabs/maintainers
+.github/pull_request_template.md @terragonlabs/maintainers
