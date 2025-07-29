@@ -1,0 +1,99 @@
+name: Security Issue
+description: Report a security vulnerability (for public issues only)
+title: "[SECURITY] "
+labels: ["security", "triage", "urgent"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## ⚠️ Security Issue Reporting
+        
+        **For critical security vulnerabilities, please report privately through:**
+        - Security email: security@terragonlabs.com
+        - GitHub Security Advisory: https://github.com/terragonlabs/slack-kb-agent/security/advisories/new
+        
+        **Only use this public template for:**
+        - Security hardening suggestions
+        - Non-critical security improvements
+        - Security documentation issues
+        
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Security Reporting Guidelines
+      description: Please confirm the following
+      options:
+        - label: This is NOT a critical vulnerability (use private reporting for those)
+          required: true
+        - label: I have searched existing security issues
+          required: true
+        - label: I understand this issue will be public
+          required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Security Level
+      description: What type of security issue is this?
+      options:
+        - Low - Security hardening suggestion
+        - Medium - Security improvement opportunity
+        - Documentation - Security documentation issue
+        - Configuration - Security configuration improvement
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Security Issue Description
+      description: Describe the security concern or improvement
+      placeholder: Describe the security issue...
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Potential Impact
+      description: What could be the impact of this security issue?
+      placeholder: Describe potential impact...
+    validations:
+      required: true
+
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Recommended Solution
+      description: What do you recommend to address this?
+      placeholder: Describe your recommended solution...
+    validations:
+      required: true
+
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Any relevant security references, CVEs, or documentation
+      placeholder: |
+        - CVE-XXXX-XXXX
+        - https://security-advisory-url
+        - OWASP reference
+
+  - type: checkboxes
+    id: affected-components
+    attributes:
+      label: Affected Components
+      description: Which components are affected?
+      options:
+        - label: Authentication system
+        - label: Authorization/permissions
+        - label: Data validation
+        - label: Database access
+        - label: API endpoints
+        - label: File handling
+        - label: Configuration
+        - label: Dependencies
+        - label: Infrastructure/deployment
