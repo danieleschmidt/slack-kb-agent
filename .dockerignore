@@ -67,8 +67,19 @@ temp/
 
 # Security
 .secrets
+.secrets.baseline
 *.key
 *.pem
+*.crt
+*.p12
+*.pfx
+auth.json
+config.json
+secrets/
+credentials/
+*.token
+*.passwd
+*.password
 
 # Backups
 *.backup

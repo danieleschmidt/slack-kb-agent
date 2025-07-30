@@ -1,0 +1,38 @@
+# Hadolint configuration for Dockerfile linting
+# See: https://github.com/hadolint/hadolint
+
+# Rules to ignore (with justification)
+ignore:
+  # DL3008: Pin versions in apt get install (handled by package manager)
+  # DL3009: Delete the apt-get lists after installing (handled in single RUN)
+  # DL3015: Avoid additional packages by specifying --no-install-recommends
+  
+  # Rules we want to enforce:
+  - DL3000  # Use absolute WORKDIR
+  - DL3001  # For some bash commands it makes no sense to use pipes
+  - DL3002  # Last user should not be root
+  - DL3003  # Use WORKDIR to switch to a directory
+  - DL3004  # Do not use sudo as it leads to unpredictable behavior
+  - DL3007  # Using latest is prone to errors
+  - DL3020  # Use COPY instead of ADD for files and folders
+  - DL3025  # Use arguments JSON notation for CMD and ENTRYPOINT arguments
+
+# Trusted registries
+trusted-registries:
+  - docker.io
+  - ghcr.io
+  - gcr.io
+  - quay.io
+
+# Override default shell
+override:
+  error: []
+  warning: []
+  info: []
+  style: []
+
+# Additional security-focused rules
+strict-labels: true
+
+# Failure threshold
+failure-threshold: error
