@@ -9,3 +9,16 @@ CVE-2023-XXXX-FALSE-POSITIVE
 
 # Accepted risks with documented mitigation
 # CVE-YYYY-MMMM - Risk accepted: Limited scope, requires authentication
+
+# Guidelines for using this file:
+# 1. Only ignore vulnerabilities after proper risk assessment
+# 2. Document the business justification for each ignored CVE
+# 3. Set review dates for ignored vulnerabilities
+# 4. Consider alternative mitigations before ignoring
+# 5. Regularly audit and clean up this file
+
+# Example format for documented ignores:
+# CVE-2023-XXXXX  # Reviewed: 2024-01-15, Next review: 2024-04-15
+#                 # Justification: Not exploitable in containerized environment
+#                 # Mitigation: Network isolation + authentication required
+#                 # Owner: security-team

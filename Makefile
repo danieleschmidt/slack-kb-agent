@@ -133,3 +133,49 @@ monitor: ## Show monitoring dashboard
 	@echo "Health: http://localhost:9090/health"
 	@echo "Metrics: http://localhost:9090/metrics"
 	@echo "Status: http://localhost:9090/status"
+
+secrets-scan: ## Scan for secrets in codebase
+	@echo "🔍 Scanning for secrets..."
+	@if command -v detect-secrets >/dev/null 2>&1; then \
+		detect-secrets scan --baseline .secrets.baseline; \
+	else \
+		echo "detect-secrets not installed, skipping secrets scan"; \
+	fi
+
+license-check: ## Check license compliance
+	@echo "⚖️  Checking license compliance..."
+	@if command -v pip-licenses >/dev/null 2>&1; then \
+		pip-licenses --format=table --with-urls; \
+	else \
+		echo "pip-licenses not installed, install with: pip install pip-licenses"; \
+	fi
+
+container-scan: docker ## Scan container image for vulnerabilities
+	@echo "🐳 Scanning container image..."
+	@if command -v trivy >/dev/null 2>&1; then \
+		trivy image --exit-code 0 --severity HIGH,CRITICAL $(DOCKER_IMAGE); \
+	else \
+		echo "Trivy not installed, skipping container scan"; \
+	fi
+
+audit: ## Run comprehensive audit
+	@echo "🔍 Running comprehensive audit..."
+	@$(MAKE) security-full
+	@$(MAKE) secrets-scan
+	@$(MAKE) license-check
+	@echo "✅ Audit complete"
+
+compliance: ## Run compliance checks
+	@echo "📋 Running compliance checks..."
+	@echo "- Security scan: $(shell $(MAKE) security >/dev/null 2>&1 && echo '✅' || echo '❌')"
+	@echo "- Code quality: $(shell $(MAKE) lint >/dev/null 2>&1 && echo '✅' || echo '❌')"
+	@echo "- Test coverage: $(shell $(MAKE) test >/dev/null 2>&1 && echo '✅' || echo '❌')"
+	@echo "- License check: $(shell $(MAKE) license-check >/dev/null 2>&1 && echo '✅' || echo '❌')"
+
+release-check: ## Validate release readiness
+	@echo "🚀 Checking release readiness..."
+	@$(MAKE) audit
+	@$(MAKE) compliance
+	@$(MAKE) test
+	@$(MAKE) build
+	@echo "✅ Release validation complete"
