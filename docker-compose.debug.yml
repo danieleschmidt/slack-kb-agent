@@ -1,0 +1,25 @@
+# Docker Compose override for debugging
+version: '3.8'
+
+services:
+  slack-kb-agent:
+    build:
+      target: development
+    environment:
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - PROFILE_PERFORMANCE=true
+    volumes:
+      # Mount source code for live reloading
+      - ./src:/app/src
+      - ./bot.py:/app/bot.py
+      - ./monitoring_server.py:/app/monitoring_server.py
+    ports:
+      # Add debug port
+      - "5678:5678"
+    command: >
+      sh -c "
+        echo 'Starting in debug mode...' &&
+        pip install debugpy &&
+        python -m debugpy --listen 0.0.0.0:5678 --wait-for-client bot.py
+      "

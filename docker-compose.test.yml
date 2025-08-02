@@ -1,0 +1,180 @@
+# Docker Compose configuration for testing
+version: '3.8'
+
+services:
+  # Test database
+  test-postgres:
+    image: postgres:15-alpine
+    container_name: slack-kb-test-postgres
+    environment:
+      POSTGRES_DB: slack_kb_agent_test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    ports:
+      - "5433:5432"
+    volumes:
+      - test_postgres_data:/var/lib/postgresql/data
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Test Redis
+  test-redis:
+    image: redis:7-alpine
+    container_name: slack-kb-test-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - test_redis_data:/data
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  # Test runner
+  tests:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    container_name: slack-kb-tests
+    environment:
+      - TESTING=true
+      - DATABASE_URL=postgresql://test:test@test-postgres:5432/slack_kb_agent_test
+      - REDIS_URL=redis://test-redis:6379/1
+      - MOCK_EXTERNAL_APIS=true
+      - LOG_LEVEL=WARNING
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - test_coverage:/app/htmlcov
+    networks:
+      - test-network
+    command: >
+      sh -c "
+        echo 'Waiting for services to be ready...' &&
+        sleep 5 &&
+        echo 'Running tests...' &&
+        python -m pytest tests/ -v --cov=src/slack_kb_agent --cov-report=html --cov-report=term &&
+        echo 'Running security checks...' &&
+        python -m bandit -r src/ -f json &&
+        echo 'Running linting...' &&
+        python -m ruff check src/ tests/ &&
+        python -m mypy src/slack_kb_agent/ &&
+        echo 'All checks passed!'
+      "
+
+  # Performance tests
+  performance-tests:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    container_name: slack-kb-performance
+    environment:
+      - TESTING=true
+      - DATABASE_URL=postgresql://test:test@test-postgres:5432/slack_kb_agent_test
+      - REDIS_URL=redis://test-redis:6379/2
+      - PERFORMANCE_TESTING=true
+      - LOG_LEVEL=ERROR
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - performance_results:/app/performance_results
+    networks:
+      - test-network
+    command: >
+      sh -c "
+        echo 'Running performance tests...' &&
+        python -m pytest tests/performance/ -v -m benchmark &&
+        echo 'Performance tests completed!'
+      "
+    profiles:
+      - performance
+
+  # Integration tests
+  integration-tests:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    container_name: slack-kb-integration
+    environment:
+      - TESTING=true
+      - DATABASE_URL=postgresql://test:test@test-postgres:5432/slack_kb_agent_test
+      - REDIS_URL=redis://test-redis:6379/3
+      - INTEGRATION_TESTING=true
+      - LOG_LEVEL=INFO
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    networks:
+      - test-network
+    command: >
+      sh -c "
+        echo 'Running integration tests...' &&
+        python -m pytest tests/integration/ -v -m integration &&
+        echo 'Integration tests completed!'
+      "
+    profiles:
+      - integration
+
+  # E2E tests
+  e2e-tests:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    container_name: slack-kb-e2e
+    environment:
+      - TESTING=true
+      - DATABASE_URL=postgresql://test:test@test-postgres:5432/slack_kb_agent_test
+      - REDIS_URL=redis://test-redis:6379/4
+      - E2E_TESTING=true
+      - LOG_LEVEL=INFO
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    networks:
+      - test-network
+    command: >
+      sh -c "
+        echo 'Running end-to-end tests...' &&
+        python -m pytest tests/e2e/ -v -m e2e &&
+        echo 'E2E tests completed!'
+      "
+    profiles:
+      - e2e
+
+volumes:
+  test_postgres_data:
+  test_redis_data:
+  test_coverage:
+  performance_results:
+
+networks:
+  test-network:
+    driver: bridge
