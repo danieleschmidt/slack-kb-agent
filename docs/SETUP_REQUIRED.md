@@ -1,23 +1,64 @@
 # Manual Setup Requirements
 
-## Repository Configuration
+This document outlines the manual setup steps required after the automated SDLC implementation due to GitHub App permission limitations.
 
-### Branch Protection
-Configure in repository settings → Branches:
-* Protect `main` branch
-* Require pull request reviews (minimum 1 reviewer)
-* Require status checks before merging
-* Restrict pushes to admins only
+## Critical: Repository Owner Actions Required
 
-### Repository Settings
-Configure in repository settings → General:
-* **Topics**: `python`, `slack-bot`, `knowledge-base`, `ai`, `vector-search`
-* **Description**: "AI-powered Slack knowledge base agent with vector search"
-* **Homepage**: Link to documentation site
-* **Issues**: Enable GitHub Issues
-* **Wiki**: Enable if needed for additional documentation
+### 1. GitHub Workflows Setup (HIGH PRIORITY)
 
-### Secrets Management
+Due to GitHub App permission restrictions, the following workflow files must be manually created:
+
+#### Create Workflow Directory
+```bash
+mkdir -p .github/workflows
+```
+
+#### Copy Workflow Templates
+```bash
+# Core CI/CD pipeline
+cp docs/workflows/examples/ci.yml .github/workflows/ci.yml
+
+# Security scanning workflow
+cp docs/workflows/examples/security-scan.yml .github/workflows/security-scan.yml
+
+# Dependency management workflow
+cp docs/workflows/examples/dependency-update.yml .github/workflows/dependency-update.yml
+```
+
+### 2. Repository Settings Configuration
+
+#### Branch Protection Rules (REQUIRED)
+Navigate to Settings > Branches and configure:
+
+**Main Branch Protection:**
+- ✅ Require pull request reviews before merging (1 reviewer minimum)
+- ✅ Require status checks to pass before merging
+- ✅ Require branches to be up to date before merging
+- ✅ Require linear history
+- ✅ Include administrators
+- ✅ Restrict pushes that create files larger than 100MB
+
+**Required Status Checks:**
+- `security-analysis`
+- `code-quality`
+- `test-suite`
+- `docker-build`
+
+#### Environment Configuration
+Create the following environments in Settings > Environments:
+
+**Staging Environment:**
+- Required reviewers: 1
+- Deployment branches: `develop`
+- Environment secrets: `STAGING_*` variables
+
+**Production Environment:**
+- Required reviewers: 2
+- Deployment branches: `main`
+- Wait timer: 5 minutes
+- Environment secrets: `PRODUCTION_*` variables
+
+### 3. Secrets Management
 Add repository secrets in Settings → Secrets and variables → Actions:
 * `SLACK_BOT_TOKEN` - Production Slack bot token
 * `OPENAI_API_KEY` - OpenAI API key for LLM features

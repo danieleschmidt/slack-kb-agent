@@ -1,0 +1,52 @@
+# CODEOWNERS file for Slack KB Agent
+# This file defines individuals or teams that are responsible for code in this repository.
+# Order is important; the last matching pattern takes the most precedence.
+
+# Global owners - these users will be requested for review on every PR
+* @danieleschmidt
+
+# Core application code
+/src/slack_kb_agent/ @danieleschmidt
+
+# Critical configuration files
+/pyproject.toml @danieleschmidt
+/Dockerfile @danieleschmidt
+/docker-compose*.yml @danieleschmidt
+/.env.example @danieleschmidt
+
+# Security-related files
+/SECURITY.md @danieleschmidt
+/.github/workflows/security*.yml @danieleschmidt
+/scripts/generate-sbom.py @danieleschmidt
+
+# Documentation
+/docs/ @danieleschmidt
+/README.md @danieleschmidt
+/CONTRIBUTING.md @danieleschmidt
+/CHANGELOG.md @danieleschmidt
+
+# CI/CD and automation
+/.github/ @danieleschmidt
+/scripts/ @danieleschmidt
+
+# Tests (require core team approval)
+/tests/ @danieleschmidt
+
+# Database migrations (critical changes)
+/migrations/ @danieleschmidt
+/alembic.ini @danieleschmidt
+
+# Monitoring and observability
+/monitoring/ @danieleschmidt
+
+# Build and deployment
+/Makefile @danieleschmidt
+
+# Project management
+/PROJECT_CHARTER.md @danieleschmidt
+/.github/project-metrics.json @danieleschmidt
+
+# Quality assurance files
+/.pre-commit-config.yaml @danieleschmidt
+/pytest.ini @danieleschmidt
+/tox.ini @danieleschmidt
