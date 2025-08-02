@@ -1,0 +1,287 @@
+# Extended monitoring stack for Slack KB Agent
+version: '3.8'
+
+services:
+  # Application (using monitoring profile)
+  slack-kb-agent:
+    extends:
+      file: ../docker-compose.yml
+      service: slack-kb-agent
+    environment:
+      - MONITORING_ENABLED=true
+      - METRICS_PORT=9090
+      - LOG_LEVEL=INFO
+      - STRUCTURED_LOGGING=true
+    labels:
+      - "prometheus.io/scrape=true"
+      - "prometheus.io/port=9090"
+      - "prometheus.io/path=/metrics"
+
+  # PostgreSQL Exporter
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:latest
+    container_name: slack-kb-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:postgres@postgres:5432/slack_kb_agent?sslmode=disable"
+    ports:
+      - "9187:9187"
+    depends_on:
+      - postgres
+    networks:
+      - slack-kb-network
+
+  # Redis Exporter
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: slack-kb-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+    ports:
+      - "9121:9121"
+    depends_on:
+      - redis
+    networks:
+      - slack-kb-network
+
+  # Node Exporter (system metrics)
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: slack-kb-node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - slack-kb-network
+
+  # cAdvisor (container metrics)
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: slack-kb-cadvisor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    networks:
+      - slack-kb-network
+
+  # Prometheus (enhanced configuration)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: slack-kb-prometheus
+    restart: unless-stopped
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus-enhanced.yml:/etc/prometheus/prometheus.yml
+      - ./alert_rules.yml:/etc/prometheus/alert_rules.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    networks:
+      - slack-kb-network
+
+  # Alert Manager
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: slack-kb-alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    networks:
+      - slack-kb-network
+
+  # Grafana (enhanced)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: slack-kb-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel
+      - GF_FEATURE_TOGGLES_ENABLE=ngalert
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - slack-kb-network
+
+  # Jaeger (distributed tracing)
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: slack-kb-jaeger
+    restart: unless-stopped
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+      - "14250:14250"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - slack-kb-network
+
+  # Loki (log aggregation)
+  loki:
+    image: grafana/loki:latest
+    container_name: slack-kb-loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki_data:/loki
+      - ./loki.yml:/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - slack-kb-network
+
+  # Promtail (log collector)
+  promtail:
+    image: grafana/promtail:latest
+    container_name: slack-kb-promtail
+    restart: unless-stopped
+    volumes:
+      - /var/log:/var/log:ro
+      - ./promtail.yml:/etc/promtail/config.yml
+      - promtail_data:/promtail
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - slack-kb-network
+
+  # Vector (advanced log processing)
+  vector:
+    image: timberio/vector:latest-alpine
+    container_name: slack-kb-vector
+    restart: unless-stopped
+    volumes:
+      - ./vector.toml:/etc/vector/vector.toml
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: ["--config", "/etc/vector/vector.toml"]
+    networks:
+      - slack-kb-network
+
+  # Elasticsearch (for advanced log analysis)
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    container_name: slack-kb-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - slack-kb-network
+    profiles:
+      - elk
+
+  # Kibana (Elasticsearch visualization)
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.8.0
+    container_name: slack-kb-kibana
+    restart: unless-stopped
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    networks:
+      - slack-kb-network
+    profiles:
+      - elk
+
+  # Filebeat (log shipping to Elasticsearch)
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.8.0
+    container_name: slack-kb-filebeat
+    restart: unless-stopped
+    user: root
+    volumes:
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - filebeat_data:/usr/share/filebeat/data
+    command: filebeat -e -strict.perms=false
+    depends_on:
+      - elasticsearch
+    networks:
+      - slack-kb-network
+    profiles:
+      - elk
+
+  # Blackbox Exporter (external service monitoring)
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: slack-kb-blackbox-exporter
+    restart: unless-stopped
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./blackbox.yml:/etc/blackbox_exporter/config.yml
+    networks:
+      - slack-kb-network
+
+  # Uptime Kuma (uptime monitoring with UI)
+  uptime-kuma:
+    image: louislam/uptime-kuma:latest
+    container_name: slack-kb-uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "3002:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+    networks:
+      - slack-kb-network
+    profiles:
+      - uptime
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  alertmanager_data:
+  loki_data:
+  promtail_data:
+  elasticsearch_data:
+  filebeat_data:
+  uptime_kuma_data:
+
+networks:
+  slack-kb-network:
+    external: true
