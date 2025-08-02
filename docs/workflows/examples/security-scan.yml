@@ -1,0 +1,416 @@
+# Comprehensive Security Scanning Workflow
+# Save this file as .github/workflows/security-scan.yml
+
+name: Security Scanning
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Daily security scans at 3 AM UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      scan_type:
+        description: 'Type of security scan'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - secrets
+          - dependencies
+          - code
+          - container
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Secret scanning
+  secret-scanning:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.scan_type == 'secrets' || github.event.inputs.scan_type == 'full' || github.event.inputs.scan_type == '' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: GitGuardian scan
+        uses: GitGuardian/ggshield/actions/secret@v1.25.0
+        env:
+          GITHUB_PUSH_BEFORE_SHA: ${{ github.event.before }}
+          GITHUB_PUSH_BASE_SHA: ${{ github.event.base }}
+          GITHUB_PULL_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
+
+      - name: TruffleHog OSS
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: main
+          head: HEAD
+          extra_args: --debug --only-verified
+
+      - name: Detect Secrets
+        run: |
+          pip install detect-secrets
+          detect-secrets scan --all-files --baseline .secrets.baseline
+
+  # Dependency vulnerability scanning
+  dependency-scanning:
+    name: Dependency Security
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.scan_type == 'dependencies' || github.event.inputs.scan_type == 'full' || github.event.inputs.scan_type == '' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install safety pip-audit
+
+      - name: Safety check
+        run: |
+          safety check --json --output safety-report.json || true
+          safety check --short-report
+
+      - name: Pip-audit check
+        run: |
+          pip-audit --format=json --output=pip-audit-report.json || true
+          pip-audit
+
+      - name: Upload dependency scan results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: dependency-scan-results
+          path: |
+            safety-report.json
+            pip-audit-report.json
+
+  # SAST (Static Application Security Testing)
+  sast-scanning:
+    name: Static Code Analysis
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.scan_type == 'code' || github.event.inputs.scan_type == 'full' || github.event.inputs.scan_type == '' }}
+    permissions:
+      contents: read
+      security-events: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install SAST tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit semgrep
+
+      - name: Bandit security linter
+        run: |
+          bandit -r src/ -f json -o bandit-report.json || true
+          bandit -r src/ -ll
+
+      - name: Semgrep security scan
+        run: |
+          semgrep --config=auto src/ --json --output=semgrep-report.json || true
+          semgrep --config=auto src/ --error
+
+      - name: CodeQL Analysis
+        uses: github/codeql-action/init@v2
+        with:
+          languages: python
+          queries: security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v2
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+        with:
+          category: "/language:python"
+
+      - name: Upload SAST results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: sast-results
+          path: |
+            bandit-report.json
+            semgrep-report.json
+
+  # Container security scanning
+  container-scanning:
+    name: Container Security
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.scan_type == 'container' || github.event.inputs.scan_type == 'full' || github.event.inputs.scan_type == '' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: slack-kb-agent:security-scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'slack-kb-agent:security-scan'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+
+      - name: Grype vulnerability scanner
+        uses: anchore/scan-action@v3
+        with:
+          image: 'slack-kb-agent:security-scan'
+          fail-build: false
+          output-format: sarif
+
+      - name: Upload Grype scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: results.sarif
+
+      - name: Docker Scout
+        if: github.event_name != 'pull_request'
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: slack-kb-agent:security-scan
+          only-severities: critical,high
+          exit-code: true
+
+  # License compliance scanning
+  license-scanning:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.scan_type == 'full' || github.event.inputs.scan_type == '' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pip-licenses
+
+      - name: Generate license report
+        run: |
+          pip-licenses --format=json --output-file=license-report.json
+          pip-licenses --format=html --output-file=license-report.html
+
+      - name: Check license compatibility
+        run: |
+          # Add custom license checking logic here
+          python scripts/check-licenses.py license-report.json
+
+      - name: Upload license reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: license-reports
+          path: |
+            license-report.json
+            license-report.html
+
+  # Infrastructure as Code (IaC) scanning
+  iac-scanning:
+    name: Infrastructure Security
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.scan_type == 'full' || github.event.inputs.scan_type == '' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Checkov IaC scan
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: dockerfile,docker_compose
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+
+      - name: Upload Checkov scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: checkov-results.sarif
+
+      - name: Hadolint Dockerfile linting
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          format: sarif
+          output-file: hadolint-results.sarif
+
+      - name: Upload Hadolint results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: hadolint-results.sarif
+
+  # Security policy compliance
+  compliance-check:
+    name: Security Compliance
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.scan_type == 'full' || github.event.inputs.scan_type == '' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: CIS Benchmark check
+        run: |
+          # Add CIS benchmark compliance checks
+          echo "Running CIS benchmark checks..."
+
+      - name: OWASP compliance check
+        run: |
+          # Add OWASP Top 10 compliance verification
+          echo "Checking OWASP compliance..."
+
+      - name: NIST framework alignment
+        run: |
+          # Add NIST cybersecurity framework checks
+          echo "Verifying NIST framework alignment..."
+
+      - name: Generate compliance report
+        run: |
+          echo "Generating security compliance report..."
+          # Generate comprehensive compliance documentation
+
+  # Security report generation
+  security-report:
+    name: Security Report
+    runs-on: ubuntu-latest
+    needs: [secret-scanning, dependency-scanning, sast-scanning, container-scanning, license-scanning, iac-scanning, compliance-check]
+    if: always()
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+
+      - name: Generate security summary
+        run: |
+          python scripts/generate-security-report.py \
+            --output security-summary.json \
+            --format json
+
+      - name: Create security dashboard
+        run: |
+          python scripts/create-security-dashboard.py \
+            --input security-summary.json \
+            --output security-dashboard.html
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-reports
+          path: |
+            security-summary.json
+            security-dashboard.html
+
+      - name: Notify security team
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#security-alerts'
+          webhook_url: ${{ secrets.SECURITY_SLACK_WEBHOOK }}
+          text: |
+            🚨 Security scan failed for Slack KB Agent
+            Repository: ${{ github.repository }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            
+            Please review the security scan results and address any critical findings.
+
+  # Automated security fixes
+  auto-fix:
+    name: Automated Security Fixes
+    runs-on: ubuntu-latest
+    needs: [dependency-scanning]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Auto-fix security vulnerabilities
+        run: |
+          # Update dependencies with security patches
+          pip install pip-review
+          pip-review --auto --preview
+
+      - name: Create pull request for security fixes
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'security: automated security dependency updates'
+          title: 'Security: Automated dependency security updates'
+          body: |
+            This PR contains automated security updates for dependencies.
+            
+            Please review the changes and merge if appropriate.
+          branch: security/automated-updates
+          labels: security, dependencies, automated

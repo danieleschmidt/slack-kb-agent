@@ -1,0 +1,439 @@
+# Automated Dependency Management Workflow
+# Save this file as .github/workflows/dependency-update.yml
+
+name: Dependency Management
+
+on:
+  schedule:
+    # Run weekly on Mondays at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      update_type:
+        description: 'Type of update to perform'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - security-only
+      create_pr:
+        description: 'Create pull request automatically'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Analyze current dependencies
+  dependency-analysis:
+    name: Dependency Analysis
+    runs-on: ubuntu-latest
+    outputs:
+      has_updates: ${{ steps.check.outputs.has_updates }}
+      security_updates: ${{ steps.check.outputs.security_updates }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install analysis tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-review pip-audit safety pipenv-setup
+
+      - name: Check for outdated packages
+        id: check
+        run: |
+          # Check for available updates
+          pip install -e .
+          pip-review --preview > outdated-packages.txt || true
+          
+          # Check for security vulnerabilities
+          safety check --json > security-report.json || true
+          pip-audit --format=json > pip-audit-report.json || true
+          
+          # Determine if updates are available
+          if [ -s outdated-packages.txt ]; then
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check for security updates
+          if [ -s security-report.json ] || [ -s pip-audit-report.json ]; then
+            echo "security_updates=true" >> $GITHUB_OUTPUT
+          else
+            echo "security_updates=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload analysis results
+        uses: actions/upload-artifact@v3
+        with:
+          name: dependency-analysis
+          path: |
+            outdated-packages.txt
+            security-report.json
+            pip-audit-report.json
+
+  # Security-only updates (high priority)
+  security-updates:
+    name: Security Updates
+    runs-on: ubuntu-latest
+    needs: dependency-analysis
+    if: needs.dependency-analysis.outputs.security_updates == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install update tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install safety pip-audit
+
+      - name: Apply security updates
+        run: |
+          # Install current dependencies
+          pip install -e .
+          
+          # Identify and update vulnerable packages
+          pip-audit --fix --format=json > security-fixes.json || true
+          
+          # Update pyproject.toml with security fixes
+          python scripts/update-security-deps.py security-fixes.json
+
+      - name: Test security updates
+        run: |
+          # Install updated dependencies
+          pip install -e .
+          
+          # Run quick tests to ensure updates don't break functionality
+          python -m pytest tests/ -x --maxfail=5 -q
+
+      - name: Create security update PR
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'security: update vulnerable dependencies'
+          title: '🔒 Security: Update vulnerable dependencies'
+          body: |
+            ## Security Dependency Updates
+            
+            This PR contains automated security updates for vulnerable dependencies.
+            
+            ### Changes
+            - Updated packages with known security vulnerabilities
+            - All tests pass with the updated dependencies
+            
+            ### Security Scan Results
+            See attached security scan artifacts for details.
+            
+            **Priority: HIGH** - Please review and merge promptly.
+          branch: security/dependency-updates
+          labels: security, dependencies, high-priority
+          assignees: ${{ github.repository_owner }}
+
+  # Regular dependency updates
+  dependency-updates:
+    name: Dependency Updates
+    runs-on: ubuntu-latest
+    needs: dependency-analysis
+    if: needs.dependency-analysis.outputs.has_updates == 'true' && github.event.inputs.update_type != 'security-only'
+    
+    strategy:
+      matrix:
+        update-type: [patch, minor]
+        include:
+          - update-type: patch
+            pip-review-args: "--auto --preview"
+          - update-type: minor
+            pip-review-args: "--auto --preview --dev"
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install update tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-review pip-tools
+
+      - name: Generate updated requirements
+        run: |
+          # Install current dependencies
+          pip install -e .
+          
+          # Generate updated requirements based on update type
+          case "${{ matrix.update-type }}" in
+            "patch")
+              pip-review --auto --preview > patch-updates.txt
+              ;;
+            "minor")
+              pip-review --auto --preview --dev > minor-updates.txt
+              ;;
+          esac
+
+      - name: Apply updates
+        run: |
+          # Apply the updates
+          pip-review ${{ matrix.pip-review-args }}
+          
+          # Regenerate lock file
+          pip freeze > requirements-updated.txt
+
+      - name: Run comprehensive tests
+        run: |
+          # Install updated dependencies
+          pip install -e .
+          
+          # Run full test suite
+          python -m pytest tests/ -v
+          
+          # Run security checks
+          safety check
+          
+          # Run linting
+          ruff check src/ tests/
+
+      - name: Generate update summary
+        run: |
+          python scripts/generate-update-summary.py \
+            --type ${{ matrix.update-type }} \
+            --output update-summary-${{ matrix.update-type }}.md
+
+      - name: Create dependency update PR
+        if: github.event.inputs.create_pr != 'false'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'deps: ${{ matrix.update-type }} dependency updates'
+          title: '📦 Dependencies: ${{ matrix.update-type }} updates'
+          body: |
+            ## ${{ matrix.update-type }} Dependency Updates
+            
+            This PR contains automated ${{ matrix.update-type }} version updates for dependencies.
+            
+            ### Update Summary
+            See `update-summary-${{ matrix.update-type }}.md` for detailed changes.
+            
+            ### Testing
+            - ✅ All tests pass
+            - ✅ Security scan clean
+            - ✅ Code quality checks pass
+            
+            ### Review Checklist
+            - [ ] Review dependency changes
+            - [ ] Verify application functionality
+            - [ ] Check for breaking changes
+            - [ ] Approve and merge if ready
+          branch: deps/${{ matrix.update-type }}-updates
+          labels: dependencies, ${{ matrix.update-type }}-update
+          assignees: ${{ github.repository_owner }}
+
+  # Major version updates (manual review required)
+  major-updates:
+    name: Major Version Updates
+    runs-on: ubuntu-latest
+    if: github.event.inputs.update_type == 'major'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Identify major updates
+        run: |
+          pip install pip-review
+          pip install -e .
+          
+          # Check for major version updates
+          pip list --outdated --format=json > major-updates.json
+          python scripts/filter-major-updates.py major-updates.json > major-updates-filtered.json
+
+      - name: Create major update issue
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'deps: identify major version updates'
+          title: '🔄 Dependencies: Major version updates available'
+          body: |
+            ## Major Version Updates Available
+            
+            The following dependencies have major version updates available that require manual review:
+            
+            See `major-updates-filtered.json` for details.
+            
+            ### Action Required
+            Each major update should be reviewed individually for:
+            - Breaking changes
+            - Migration requirements
+            - Compatibility issues
+            - Performance impact
+            
+            ### Next Steps
+            1. Review each major update individually
+            2. Create separate PRs for each major update
+            3. Test thoroughly before merging
+          branch: deps/major-updates-review
+          labels: dependencies, major-update, needs-review
+
+  # Pin dependencies for reproducible builds
+  pin-dependencies:
+    name: Pin Dependencies
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Generate pinned requirements
+        run: |
+          pip install pip-tools
+          pip install -e .
+          
+          # Generate pinned requirements
+          pip freeze > requirements-pinned.txt
+          
+          # Generate hash-pinned requirements for security
+          pip-compile --generate-hashes --output-file requirements-hashed.txt pyproject.toml
+
+      - name: Validate pinned requirements
+        run: |
+          # Test installation from pinned requirements
+          python -m venv test-env
+          source test-env/bin/activate
+          pip install -r requirements-pinned.txt
+          python -c "import slack_kb_agent; print('Import successful')"
+
+      - name: Update pinned dependencies
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'deps: update pinned dependencies'
+          title: '📌 Dependencies: Update pinned versions'
+          body: |
+            ## Pinned Dependencies Update
+            
+            This PR updates the pinned dependency versions for reproducible builds.
+            
+            ### Changes
+            - Updated `requirements-pinned.txt` with current versions
+            - Updated `requirements-hashed.txt` with security hashes
+            
+            ### Benefits
+            - Ensures reproducible builds
+            - Improves security with hash verification
+            - Documents exact dependency tree
+          branch: deps/pin-updates
+          labels: dependencies, pinned-versions
+
+  # Dependency vulnerability monitoring
+  vulnerability-monitoring:
+    name: Vulnerability Monitoring
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install monitoring tools
+        run: |
+          pip install safety pip-audit
+
+      - name: Check for new vulnerabilities
+        run: |
+          pip install -e .
+          
+          # Check for vulnerabilities
+          safety check --json > vulnerability-report.json || true
+          pip-audit --format=json > audit-report.json || true
+
+      - name: Generate vulnerability summary
+        run: |
+          python scripts/process-vulnerability-reports.py \
+            vulnerability-report.json audit-report.json \
+            --output vulnerability-summary.json
+
+      - name: Create vulnerability alert
+        if: hashFiles('vulnerability-summary.json') != ''
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'security: vulnerability monitoring alert'
+          title: '🚨 Security: New vulnerabilities detected'
+          body: |
+            ## New Security Vulnerabilities Detected
+            
+            The automated vulnerability monitoring has detected new security issues in dependencies.
+            
+            ### Action Required
+            Please review the vulnerability report and apply necessary updates.
+            
+            See `vulnerability-summary.json` for details.
+          branch: security/vulnerability-alert
+          labels: security, vulnerability, urgent
+
+  # Cleanup old branches
+  cleanup:
+    name: Cleanup Old Branches
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Delete merged dependency branches
+        run: |
+          git branch -r --merged | grep 'origin/deps/' | grep -v 'origin/deps/main' | sed 's/origin\///' | xargs -r git push origin --delete
+
+      - name: Delete old security branches
+        run: |
+          # Delete security branches older than 30 days
+          git for-each-ref --format='%(refname:short) %(committerdate)' refs/remotes/origin/security/ | \
+          awk '$2 < "'$(date -d '30 days ago' '+%Y-%m-%d')'"' | \
+          awk '{print $1}' | sed 's/origin\///' | xargs -r git push origin --delete

@@ -1,0 +1,442 @@
+# CI/CD Workflow for Slack KB Agent
+# Save this file as .github/workflows/ci.yml
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run nightly security scans
+    - cron: '0 2 * * *'
+
+env:
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '18'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Security and dependency analysis
+  security-analysis:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit safety semgrep
+
+      - name: Run Bandit security linter
+        run: |
+          bandit -r src/ -f json -o bandit-report.json
+          bandit -r src/ -f txt
+
+      - name: Run Safety check
+        run: |
+          safety check --json --output safety-report.json
+          safety check
+
+      - name: Run Semgrep
+        run: |
+          semgrep --config=auto src/ --json --output=semgrep-report.json
+          semgrep --config=auto src/
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: security-reports
+          path: |
+            bandit-report.json
+            safety-report.json
+            semgrep-report.json
+
+      - name: GitGuardian security scan
+        uses: GitGuardian/ggshield/actions/secret@v1.25.0
+        env:
+          GITHUB_PUSH_BEFORE_SHA: ${{ github.event.before }}
+          GITHUB_PUSH_BASE_SHA: ${{ github.event.base }}
+          GITHUB_PULL_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
+
+  # Code quality and linting
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[llm]"
+          pip install black ruff mypy pytest pytest-cov
+
+      - name: Code formatting check
+        run: |
+          black --check --diff src/ tests/
+
+      - name: Linting with Ruff
+        run: |
+          ruff check src/ tests/ --output-format=github
+
+      - name: Type checking with MyPy
+        run: |
+          mypy src/slack_kb_agent/ --ignore-missing-imports
+
+      - name: Import sorting check
+        run: |
+          ruff check --select I src/ tests/
+
+  # Unit and integration tests
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11']
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: slack_kb_agent_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[llm]"
+          pip install pytest pytest-cov pytest-mock pytest-xdist
+
+      - name: Run unit tests
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/slack_kb_agent_test
+          REDIS_URL: redis://localhost:6379/1
+          TESTING: true
+        run: |
+          pytest tests/ -v \
+            --cov=src/slack_kb_agent \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-report=term \
+            --cov-fail-under=80 \
+            -x
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-${{ matrix.python-version }}
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: test-results-${{ matrix.python-version }}
+          path: |
+            htmlcov/
+            coverage.xml
+
+  # Performance and load testing
+  performance-test:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[llm]"
+          pip install pytest pytest-benchmark
+
+      - name: Run performance tests
+        run: |
+          pytest tests/performance/ -v --benchmark-json=benchmark.json
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v3
+        with:
+          name: benchmark-results
+          path: benchmark.json
+
+  # Build and test Docker images
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [security-analysis, code-quality, test]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and test Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: development
+          load: true
+          tags: slack-kb-agent:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test Docker image
+        run: |
+          docker run --rm -e TESTING=true slack-kb-agent:test pytest tests/ -v --maxfail=5
+
+      - name: Build production image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: production
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: slack-kb-agent:test
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # Generate SBOM
+  sbom-generation:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    needs: [docker-build]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Generate SBOM
+        run: |
+          python scripts/generate-sbom.py --output sbom.json --format spdx
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v3
+        with:
+          name: sbom
+          path: sbom.json
+
+  # End-to-end tests
+  e2e-test:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [docker-build]
+    if: github.event_name == 'push'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Start test environment
+        run: |
+          docker-compose -f docker-compose.test.yml up -d
+          sleep 30
+
+      - name: Run E2E tests
+        run: |
+          docker-compose -f docker-compose.test.yml run --rm e2e-tests
+
+      - name: Collect logs
+        if: always()
+        run: |
+          docker-compose -f docker-compose.test.yml logs > e2e-logs.txt
+
+      - name: Upload E2E artifacts
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: e2e-results
+          path: |
+            e2e-logs.txt
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker-compose -f docker-compose.test.yml down -v
+
+  # Deployment to staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [test, docker-build, e2e-test]
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment: staging
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to staging
+        run: |
+          echo "Deploying to staging environment..."
+          # Add your staging deployment commands here
+          # Example: kubectl apply -f k8s/staging/
+
+      - name: Run smoke tests
+        run: |
+          echo "Running smoke tests on staging..."
+          # Add staging smoke tests here
+
+  # Deployment to production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [test, docker-build, e2e-test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to production
+        run: |
+          echo "Deploying to production environment..."
+          # Add your production deployment commands here
+          # Example: kubectl apply -f k8s/production/
+
+      - name: Run smoke tests
+        run: |
+          echo "Running smoke tests on production..."
+          # Add production smoke tests here
+
+      - name: Notify deployment
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: ${{ job.status }}
+          channel: '#deployments'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          text: |
+            Deployment to production completed
+            Status: ${{ job.status }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+
+  # Security compliance checks
+  compliance-check:
+    name: Compliance Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run compliance checks
+        run: |
+          echo "Running compliance checks..."
+          # Add compliance validation scripts here
+
+      - name: Generate compliance report
+        run: |
+          echo "Generating compliance report..."
+          # Generate compliance documentation
+
+      - name: Upload compliance report
+        uses: actions/upload-artifact@v3
+        with:
+          name: compliance-report
+          path: compliance-report.pdf
