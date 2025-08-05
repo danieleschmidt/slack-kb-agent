@@ -43,6 +43,16 @@ from .password_hash import PasswordHasher
 from .validation import InputValidator, ValidationConfig, sanitize_query, validate_slack_input
 from .rate_limiting import RateLimiter, RateLimitConfig, UserRateLimiter, get_rate_limiter, get_user_rate_limiter
 from .llm import LLMConfig, ResponseGenerator, LLMResponse, get_response_generator
+from .quantum_task_planner import (
+    QuantumTaskPlanner, QuantumTask, TaskState, TaskPriority,
+    get_quantum_planner, create_simple_task, create_dependent_tasks, create_entangled_task_pair
+)
+from .autonomous_sdlc import AutonomousSDLC, SDLCPhase, QualityGate, get_autonomous_sdlc
+from .resilience import (
+    ResilientExecutor, CircuitBreaker, BulkheadIsolation, HealthMonitor,
+    RetryConfig, BulkheadConfig, BackoffStrategy, HealthStatus,
+    get_resilient_executor, get_circuit_breaker, get_bulkhead, get_health_monitor
+)
 from . import cli
 
 __all__ = [
@@ -100,5 +110,29 @@ __all__ = [
     "ResponseGenerator",
     "LLMResponse",
     "get_response_generator",
+    "QuantumTaskPlanner",
+    "QuantumTask",
+    "TaskState",
+    "TaskPriority",
+    "get_quantum_planner",
+    "create_simple_task",
+    "create_dependent_tasks",
+    "create_entangled_task_pair",
+    "AutonomousSDLC",
+    "SDLCPhase",
+    "QualityGate",
+    "get_autonomous_sdlc",
+    "ResilientExecutor",
+    "CircuitBreaker", 
+    "BulkheadIsolation",
+    "HealthMonitor",
+    "RetryConfig",
+    "BulkheadConfig",
+    "BackoffStrategy",
+    "HealthStatus",
+    "get_resilient_executor",
+    "get_circuit_breaker",
+    "get_bulkhead",
+    "get_health_monitor",
     "cli",
 ]
