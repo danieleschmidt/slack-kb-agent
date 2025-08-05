@@ -455,6 +455,10 @@ class StructuredLogger:
     def critical(self, message: str, **extra_fields) -> None:
         """Log critical message."""
         self._log("CRITICAL", message, **extra_fields)
+    
+    def log_event(self, event_name: str, event_data: dict) -> None:
+        """Log a structured event with data."""
+        self.info(f"Event: {event_name}", event=event_name, **event_data)
 
 
 class MonitoredKnowledgeBase:
