@@ -19,6 +19,9 @@ from .monitoring import get_global_metrics, StructuredLogger
 from .cache import get_cache_manager
 from .configuration import get_slack_bot_config
 from .constants import QueryProcessingDefaults
+from .advanced_nlp import AdvancedQueryProcessor, QueryIntent as AdvancedQueryIntent, EnhancedQuery
+from .feedback_learning import FeedbackLearningSystem, FeedbackType
+from .content_curation import ContentCurationSystem
 
 logger = logging.getLogger(__name__)
 
@@ -464,7 +467,7 @@ class QueryProcessor:
 
 
 class EnhancedQueryProcessor(QueryProcessor):
-    """Enhanced query processor with LLM integration and advanced features."""
+    """Enhanced query processor with LLM integration and advanced NLP features."""
     
     def __init__(self, kb: KnowledgeBase, max_user_contexts: Optional[int] = QueryProcessingDefaults.DEFAULT_MAX_USER_CONTEXTS, **kwargs):
         super().__init__(kb, **kwargs)
@@ -473,9 +476,21 @@ class EnhancedQueryProcessor(QueryProcessor):
         self.max_user_contexts = max_user_contexts
         self.metrics = get_global_metrics()
         self.structured_logger = StructuredLogger("enhanced_query_processor")
+        
+        # Initialize advanced NLP processor
+        self.advanced_nlp = AdvancedQueryProcessor()
+        self.structured_logger.info("Initialized advanced NLP query processor")
+        
+        # Initialize feedback learning system
+        self.feedback_system = FeedbackLearningSystem("data/feedback_learning.json")
+        self.structured_logger.info("Initialized feedback learning system")
+        
+        # Initialize content curation system
+        self.content_curation = ContentCurationSystem("data/content_curation.json")
+        self.structured_logger.info("Initialized content curation system")
     
     def process_query(self, query: Query | str, user_id: Optional[str] = None) -> QueryResult:
-        """Enhanced query processing with intent classification and expansion."""
+        """Enhanced query processing with advanced NLP and intent classification."""
         start_time = time.time()
         
         # Extract query text and metadata
@@ -489,14 +504,30 @@ class EnhancedQueryProcessor(QueryProcessor):
             # Track query processing
             self.metrics.increment_counter("enhanced_queries_total")
             
-            # Classify intent
-            intent = QueryIntent.classify(query_text)
-            self.metrics.increment_counter(f"query_intent_{intent.value}_total")
-            self.structured_logger.debug(f"Classified query as {intent.value}", 
-                                       query=query_text, intent=intent.value, user_id=user_id)
+            # Apply advanced NLP processing
+            enhanced_query = self.advanced_nlp.process_query(query_text)
             
-            # Normalize query
-            normalized_query = self.normalize(query_text)
+            # Map advanced intent to legacy intent for backward compatibility
+            intent = self._map_advanced_intent(enhanced_query.intent)
+            
+            self.metrics.increment_counter(f"query_intent_{intent.value}_total")
+            self.metrics.increment_counter(f"query_complexity_{enhanced_query.complexity.value}_total")
+            
+            self.structured_logger.debug(
+                f"Enhanced query processing: {enhanced_query.intent.value} ({enhanced_query.complexity.value})", 
+                query=query_text, 
+                intent=enhanced_query.intent.value,
+                complexity=enhanced_query.complexity.value,
+                confidence=enhanced_query.confidence,
+                entities=enhanced_query.context.entities,
+                user_id=user_id
+            )
+            
+            # Use enhanced query for better search
+            normalized_query = self.normalize(enhanced_query.expanded_query)
+            
+            # Extract additional search terms from NLP analysis
+            additional_terms = enhanced_query.key_concepts + enhanced_query.context.entities
             
             # Get user context if available
             context_used = False
@@ -515,8 +546,20 @@ class EnhancedQueryProcessor(QueryProcessor):
             # Expand query terms
             expanded_terms = self._expand_query(normalized_query, intent)
             
+            # Check if query should be escalated based on learned patterns
+            should_escalate = self.feedback_system.should_escalate_query(query_text)
+            predicted_success = self.feedback_system.predict_query_success_rate(query_text)
+            
             # Perform search with expanded terms
             documents = self._enhanced_search(normalized_query, expanded_terms, intent)
+            
+            # Apply feedback-based document ranking
+            if documents:
+                doc_ids = [doc.metadata.get('id', f"doc_{i}") for i, doc in enumerate(documents)]
+                ranked_docs = self.feedback_system.rank_response_documents(doc_ids, query_text)
+                # Reorder documents based on learned ranking
+                doc_order = {doc_id: score for doc_id, score in ranked_docs}
+                documents.sort(key=lambda doc: doc_order.get(doc.metadata.get('id', ''), 0), reverse=True)
             
             # Update user context
             if user_id and documents:
@@ -602,6 +645,23 @@ class EnhancedQueryProcessor(QueryProcessor):
                     processing_time=processing_time,
                     error_message=f"All processing failed: {e}"
                 )
+    
+    def _map_advanced_intent(self, advanced_intent: AdvancedQueryIntent) -> QueryIntent:
+        """Map advanced NLP intent to legacy QueryIntent for backward compatibility."""
+        mapping = {
+            AdvancedQueryIntent.DEFINITION: QueryIntent.DEFINITION,
+            AdvancedQueryIntent.EXPLANATION: QueryIntent.QUESTION,
+            AdvancedQueryIntent.HOWTO: QueryIntent.QUESTION,
+            AdvancedQueryIntent.TROUBLESHOOTING: QueryIntent.TROUBLESHOOTING,
+            AdvancedQueryIntent.STATUS: QueryIntent.SEARCH,
+            AdvancedQueryIntent.LOCATION: QueryIntent.SEARCH,
+            AdvancedQueryIntent.COMPARISON: QueryIntent.QUESTION,
+            AdvancedQueryIntent.CONFIGURATION: QueryIntent.QUESTION,
+            AdvancedQueryIntent.HISTORY: QueryIntent.SEARCH,
+            AdvancedQueryIntent.CONVERSATIONAL: QueryIntent.CONVERSATIONAL,
+            AdvancedQueryIntent.ESCALATION: QueryIntent.QUESTION
+        }
+        return mapping.get(advanced_intent, QueryIntent.QUESTION)
     
     def _get_user_context(self, user_id: str) -> QueryContext:
         """Get or create user context with LRU eviction."""
@@ -809,3 +869,70 @@ Return only the suggested queries, one per line."""
             ])
         
         return suggestions[:4]
+    
+    def record_feedback(self, query: str, response: str, feedback_type: FeedbackType,
+                       user_id: Optional[str] = None, rating: Optional[int] = None,
+                       documents_used: Optional[List[str]] = None) -> str:
+        """Record user feedback for continuous learning."""
+        return self.feedback_system.record_feedback(
+            query=query,
+            response=response,
+            feedback_type=feedback_type,
+            user_id=user_id,
+            rating=rating,
+            documents_used=documents_used,
+            context={"timestamp": time.time()}
+        )
+    
+    def get_learning_metrics(self):
+        """Get feedback learning system metrics."""
+        return self.feedback_system.get_learning_metrics()
+    
+    def get_user_satisfaction_score(self, user_id: str) -> float:
+        """Get user satisfaction score based on feedback history."""
+        return self.feedback_system.get_user_satisfaction_score(user_id)
+    
+    def get_content_quality_insights(self) -> Dict[str, Any]:
+        """Get insights about content quality and knowledge gaps."""
+        high_quality = self.content_curation.get_high_quality_content()
+        needs_improvement = self.content_curation.get_content_needing_improvement()
+        knowledge_gaps = self.content_curation.get_knowledge_gaps()
+        priorities = self.content_curation.suggest_content_priorities()
+        
+        return {
+            "high_quality_content": len(high_quality),
+            "content_needing_improvement": len(needs_improvement),
+            "knowledge_gaps": len(knowledge_gaps),
+            "critical_gaps": len([gap for gap in knowledge_gaps if gap.severity >= 0.8]),
+            "content_priorities": priorities[:5],
+            "improvement_suggestions": [
+                {
+                    "source": content.document.source,
+                    "quality": content.quality.value,
+                    "suggestions": content.suggested_improvements[:3]
+                }
+                for content in needs_improvement[:3]
+            ]
+        }
+    
+    def curate_knowledge_base_content(self, documents: List[Document]) -> Dict[str, Any]:
+        """Curate and analyze knowledge base content."""
+        curated_docs = self.content_curation.curate_document_collection(documents)
+        
+        quality_distribution = Counter()
+        type_distribution = Counter()
+        
+        for content in curated_docs.values():
+            quality_distribution[content.quality.value] += 1
+            type_distribution[content.content_type.value] += 1
+        
+        return {
+            "total_documents_curated": len(curated_docs),
+            "quality_distribution": dict(quality_distribution),
+            "content_type_distribution": dict(type_distribution),
+            "average_quality_score": sum(
+                content.metrics.overall_quality_score() 
+                for content in curated_docs.values()
+            ) / len(curated_docs) if curated_docs else 0.0,
+            "curation_summary": self.get_content_quality_insights()
+        }
