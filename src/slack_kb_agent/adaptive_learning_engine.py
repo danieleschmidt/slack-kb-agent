@@ -90,7 +90,7 @@ class AdaptationRule:
 
 
 class AdaptiveLearningEngine:
-    """Advanced learning engine for continuous system improvement."""
+    """Advanced learning engine with novel reinforcement learning and self-improvement."""
     
     def __init__(self, learning_rate: float = 0.1):
         self.learning_rate = learning_rate
@@ -102,21 +102,35 @@ class AdaptiveLearningEngine:
         self.adaptation_rules: Dict[str, AdaptationRule] = {}
         self.feature_importance: Dict[str, float] = defaultdict(float)
         
+        # Novel reinforcement learning components
+        self.q_table: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
+        self.action_value_estimates: Dict[str, float] = defaultdict(float)
+        self.exploration_rate = 0.3  # Epsilon for epsilon-greedy
+        self.discount_factor = 0.95  # Gamma for future rewards
+        
+        # Advanced learning mechanisms
+        self.meta_learning_patterns: Dict[str, Any] = {}
+        self.self_improvement_history: deque = deque(maxlen=5000)
+        self.algorithm_performance_tracking: Dict[str, deque] = defaultdict(lambda: deque(maxlen=100))
+        
         # Learning history and metrics
         self.learning_history: deque = deque(maxlen=10000)
         self.adaptation_history: deque = deque(maxlen=1000)
         self.performance_baseline: Dict[str, float] = {}
         
-        # Continuous learning settings
+        # Enhanced learning settings
         self.min_pattern_confidence = 0.7
         self.max_patterns = 1000
         self.learning_window_hours = 24
+        self.reinforcement_learning_enabled = True
+        self.meta_learning_enabled = True
         
         # Learning locks for thread safety
         self._learning_lock = threading.Lock()
         self._pattern_lock = threading.Lock()
+        self._rl_lock = threading.Lock()  # For RL updates
         
-        logger.info(f"Adaptive Learning Engine initialized with learning rate: {learning_rate}")
+        logger.info(f"Enhanced Adaptive Learning Engine initialized with RL and meta-learning capabilities")
     
     async def learn_from_query(self, query: str, response: str, 
                               performance_metrics: Dict[str, float],
@@ -180,50 +194,93 @@ class AdaptiveLearningEngine:
             logger.error(f"Error learning from errors: {e}")
     
     async def get_adaptive_recommendations(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Get adaptive recommendations based on learned patterns."""
+        """Get adaptive recommendations using novel reinforcement learning."""
         recommendations = []
         
         try:
+            # Get traditional rule-based recommendations
             with self._pattern_lock:
                 for rule in self.adaptation_rules.values():
                     recommendation = rule.apply_rule(context)
                     if recommendation:
                         recommendation['rule_id'] = rule.rule_id
                         recommendation['confidence'] = rule.effectiveness_score
+                        recommendation['source'] = 'rule_based'
                         recommendations.append(recommendation)
             
-            # Sort by confidence/effectiveness
-            recommendations.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+            # Get novel RL-based recommendations
+            if self.reinforcement_learning_enabled:
+                rl_recommendations = await self._get_reinforcement_learning_recommendations(context)
+                recommendations.extend(rl_recommendations)
             
-            self.logger.debug(f"Generated {len(recommendations)} adaptive recommendations")
+            # Get meta-learning recommendations
+            if self.meta_learning_enabled:
+                meta_recommendations = await self._get_meta_learning_recommendations(context)
+                recommendations.extend(meta_recommendations)
+            
+            # Enhanced recommendation ranking with multi-criteria optimization
+            ranked_recommendations = await self._rank_recommendations_with_rl(recommendations, context)
+            
+            self.logger.debug(f"Generated {len(ranked_recommendations)} enhanced adaptive recommendations")
             
         except Exception as e:
             logger.error(f"Error generating recommendations: {e}")
+            return recommendations[:10]  # Fallback to basic recommendations
         
-        return recommendations[:10]  # Return top 10 recommendations
+        return ranked_recommendations[:15]  # Return top 15 enhanced recommendations
     
     async def optimize_system_parameters(self) -> Dict[str, Any]:
-        """Optimize system parameters based on learned patterns."""
+        """Optimize system parameters using reinforcement learning and meta-learning."""
         try:
-            optimizations = {
+            # Traditional optimizations
+            traditional_optimizations = {
                 'cache_settings': await self._optimize_cache_settings(),
                 'search_parameters': await self._optimize_search_parameters(),
                 'response_formatting': await self._optimize_response_formatting(),
                 'resource_allocation': await self._optimize_resource_allocation()
             }
             
-            # Apply optimizations if they meet confidence thresholds
+            # Novel RL-based optimizations
+            rl_optimizations = {}
+            if self.reinforcement_learning_enabled:
+                rl_optimizations = {
+                    'rl_search_strategy': await self._rl_optimize_search_strategy(),
+                    'rl_resource_allocation': await self._rl_optimize_resources(),
+                    'rl_caching_policy': await self._rl_optimize_caching()
+                }
+            
+            # Meta-learning optimizations
+            meta_optimizations = {}
+            if self.meta_learning_enabled:
+                meta_optimizations = {
+                    'meta_algorithm_selection': await self._meta_optimize_algorithms(),
+                    'meta_parameter_tuning': await self._meta_optimize_parameters()
+                }
+            
+            # Combine all optimizations
+            all_optimizations = {**traditional_optimizations, **rl_optimizations, **meta_optimizations}
+            
+            # Apply optimizations with enhanced decision making
             applied_optimizations = []
-            for category, optimization in optimizations.items():
-                if optimization.get('confidence', 0) > 0.8:
+            for category, optimization in all_optimizations.items():
+                should_apply = await self._should_apply_optimization(category, optimization)
+                if should_apply:
                     await self._apply_optimization(category, optimization)
                     applied_optimizations.append(category)
+                    
+                    # Update RL policy based on application
+                    if self.reinforcement_learning_enabled:
+                        await self._update_rl_policy(category, optimization)
             
-            self.logger.info(f"Applied optimizations: {applied_optimizations}")
+            self.logger.info(f"Applied enhanced optimizations: {applied_optimizations}")
             
             return {
-                'optimizations': optimizations,
+                'traditional_optimizations': traditional_optimizations,
+                'rl_optimizations': rl_optimizations,
+                'meta_optimizations': meta_optimizations,
                 'applied': applied_optimizations,
+                'rl_enabled': self.reinforcement_learning_enabled,
+                'meta_learning_enabled': self.meta_learning_enabled,
                 'timestamp': datetime.now().isoformat()
             }
             
@@ -464,8 +521,9 @@ class AdaptiveLearningEngine:
             self.logger.debug(f"Cleaned up {len(patterns_to_remove)} old patterns")
     
     def get_learning_statistics(self) -> Dict[str, Any]:
-        """Get current learning statistics."""
+        """Get comprehensive learning statistics including RL and meta-learning metrics."""
         return {
+            # Traditional learning metrics
             'total_patterns': len(self.patterns),
             'pattern_types': {
                 ptype: len([p for p in self.patterns.values() if p.pattern_type == ptype])
@@ -477,7 +535,35 @@ class AdaptiveLearningEngine:
             'recent_adaptations': len(self.adaptation_history),
             'high_confidence_patterns': len([
                 p for p in self.patterns.values() if p.confidence_score > self.min_pattern_confidence
-            ])
+            ]),
+            
+            # Novel RL and meta-learning metrics
+            'reinforcement_learning': {
+                'enabled': self.reinforcement_learning_enabled,
+                'q_table_size': sum(len(actions) for actions in self.q_table.values()),
+                'exploration_rate': self.exploration_rate,
+                'average_q_value': np.mean([
+                    q_val for state_actions in self.q_table.values() 
+                    for q_val in state_actions.values()
+                ]) if self.q_table else 0.0,
+                'learned_policies': len(self.q_table)
+            },
+            
+            'meta_learning': {
+                'enabled': self.meta_learning_enabled,
+                'meta_patterns': len(self.meta_learning_patterns),
+                'algorithm_performance_tracking': {
+                    alg: len(perf_history) for alg, perf_history in self.algorithm_performance_tracking.items()
+                },
+                'self_improvement_events': len(self.self_improvement_history)
+            },
+            
+            'advanced_metrics': {
+                'feature_importance_variance': np.var(list(self.feature_importance.values())) if self.feature_importance else 0.0,
+                'learning_stability': self._calculate_learning_stability(),
+                'adaptation_success_rate': self._calculate_adaptation_success_rate(),
+                'meta_learning_effectiveness': self._calculate_meta_learning_effectiveness()
+            }
         }
 
 
@@ -526,6 +612,241 @@ async def demonstrate_adaptive_learning() -> Dict[str, Any]:
         'statistics': statistics,
         'timestamp': datetime.now().isoformat()
     }
+
+
+    async def _get_reinforcement_learning_recommendations(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Get recommendations using novel reinforcement learning approach."""
+        recommendations = []
+        
+        try:
+            with self._rl_lock:
+                state = self._context_to_state(context)
+                available_actions = self._get_available_actions(state)
+                
+                for action in available_actions:
+                    q_value = self.q_table[state][action]
+                    
+                    if np.random.random() < self.exploration_rate:
+                        exploration_bonus = np.random.normal(0, 0.1)
+                        confidence = min(1.0, max(0.0, q_value + exploration_bonus))
+                    else:
+                        confidence = q_value
+                    
+                    if confidence > 0.3:
+                        recommendation = {
+                            'action_type': action,
+                            'confidence': confidence,
+                            'source': 'reinforcement_learning',
+                            'q_value': q_value,
+                            'state': state
+                        }
+                        recommendation.update(self._get_action_parameters(action, context))
+                        recommendations.append(recommendation)
+            
+            return recommendations
+            
+        except Exception as e:
+            logger.error(f"Error in RL recommendations: {e}")
+            return []
+    
+    async def _get_meta_learning_recommendations(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Get recommendations using meta-learning patterns."""
+        recommendations = []
+        
+        try:
+            similar_contexts = self._find_similar_contexts(context)
+            
+            for similar_context, similarity_score in similar_contexts:
+                if similarity_score > 0.7:
+                    successful_actions = self._get_successful_actions_for_context(similar_context)
+                    
+                    for action, success_rate in successful_actions:
+                        if success_rate > 0.8:
+                            recommendation = {
+                                'action_type': action,
+                                'confidence': similarity_score * success_rate,
+                                'source': 'meta_learning',
+                                'similarity_score': similarity_score,
+                                'historical_success_rate': success_rate
+                            }
+                            recommendations.append(recommendation)
+            
+            return recommendations
+            
+        except Exception as e:
+            logger.error(f"Error in meta-learning recommendations: {e}")
+            return []
+    
+    def _context_to_state(self, context: Dict[str, Any]) -> str:
+        """Convert context to RL state representation."""
+        try:
+            state_features = []
+            
+            response_time = context.get('response_time', 0)
+            if response_time < 500:
+                state_features.append('rt_low')
+            elif response_time < 1000:
+                state_features.append('rt_medium')
+            else:
+                state_features.append('rt_high')
+            
+            user_count = context.get('user_count', 0)
+            if user_count < 10:
+                state_features.append('load_low')
+            elif user_count < 50:
+                state_features.append('load_medium')
+            else:
+                state_features.append('load_high')
+            
+            query_type = context.get('query_type', 'general')
+            state_features.append(f'type_{query_type}')
+            
+            return '_'.join(sorted(state_features))
+            
+        except Exception:
+            return 'default_state'
+    
+    def _get_available_actions(self, state: str) -> List[str]:
+        """Get available actions for RL state."""
+        return [
+            'enable_aggressive_caching',
+            'adjust_search_weights',
+            'scale_resources',
+            'optimize_query_processing',
+            'enable_load_balancing'
+        ]
+    
+    def _get_action_parameters(self, action: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Get parameters for specific RL actions."""
+        parameters = {'action': action}
+        
+        if action == 'enable_aggressive_caching':
+            parameters.update({
+                'cache_size_mb': min(500, max(100, context.get('user_count', 10) * 5)),
+                'cache_ttl': 3600
+            })
+        elif action == 'adjust_search_weights':
+            parameters.update({
+                'semantic_weight': 0.7,
+                'keyword_weight': 0.3
+            })
+        
+        return parameters
+    
+    def _find_similar_contexts(self, context: Dict[str, Any]) -> List[Tuple[Dict[str, Any], float]]:
+        """Find similar contexts from history for meta-learning."""
+        similar_contexts = []
+        
+        try:
+            for historical_record in list(self.adaptation_history)[-100:]:
+                if 'context' in historical_record:
+                    historical_context = historical_record['context']
+                    similarity = self._calculate_context_similarity(context, historical_context)
+                    
+                    if similarity > 0.5:
+                        similar_contexts.append((historical_context, similarity))
+            
+            similar_contexts.sort(key=lambda x: x[1], reverse=True)
+            return similar_contexts[:10]
+            
+        except Exception as e:
+            logger.error(f"Error finding similar contexts: {e}")
+            return []
+    
+    def _calculate_context_similarity(self, context1: Dict[str, Any], context2: Dict[str, Any]) -> float:
+        """Calculate similarity between contexts."""
+        try:
+            common_keys = set(context1.keys()) & set(context2.keys())
+            if not common_keys:
+                return 0.0
+            
+            similarities = []
+            for key in common_keys:
+                val1, val2 = context1[key], context2[key]
+                
+                if isinstance(val1, (int, float)) and isinstance(val2, (int, float)):
+                    if val1 == 0 and val2 == 0:
+                        sim = 1.0
+                    elif val1 == 0 or val2 == 0:
+                        sim = 0.0
+                    else:
+                        sim = 1.0 - abs(val1 - val2) / max(abs(val1), abs(val2))
+                    similarities.append(sim)
+                elif val1 == val2:
+                    similarities.append(1.0)
+                else:
+                    similarities.append(0.0)
+            
+            return sum(similarities) / len(similarities) if similarities else 0.0
+            
+        except Exception:
+            return 0.0
+    
+    def _get_successful_actions_for_context(self, context: Dict[str, Any]) -> List[Tuple[str, float]]:
+        """Get successful actions for specific context."""
+        successful_actions = defaultdict(list)
+        
+        try:
+            for record in self.adaptation_history:
+                if record.get('context') == context:
+                    action = record.get('optimization', {}).get('action', 'unknown')
+                    success = 1.0 if record.get('success', False) else 0.0
+                    if action != 'unknown':
+                        successful_actions[action].append(success)
+            
+            action_success_rates = []
+            for action, outcomes in successful_actions.items():
+                success_rate = sum(outcomes) / len(outcomes) if outcomes else 0.0
+                action_success_rates.append((action, success_rate))
+            
+            return action_success_rates
+            
+        except Exception:
+            return []
+    
+    def _calculate_learning_stability(self) -> float:
+        """Calculate learning stability metric."""
+        try:
+            if len(self.learning_history) < 10:
+                return 0.5
+            
+            recent_outcomes = [record.get('success', False) for record in list(self.learning_history)[-50:]]
+            if not recent_outcomes:
+                return 0.5
+            
+            success_rate = sum(recent_outcomes) / len(recent_outcomes)
+            return success_rate
+            
+        except Exception:
+            return 0.5
+    
+    def _calculate_adaptation_success_rate(self) -> float:
+        """Calculate adaptation success rate."""
+        try:
+            if not self.adaptation_history:
+                return 0.5
+            
+            successful_adaptations = sum(1 for record in self.adaptation_history 
+                                       if record.get('success', False))
+            
+            return successful_adaptations / len(self.adaptation_history)
+            
+        except Exception:
+            return 0.5
+    
+    def _calculate_meta_learning_effectiveness(self) -> float:
+        """Calculate meta-learning effectiveness."""
+        try:
+            if not self.meta_learning_patterns:
+                return 0.5
+            
+            effectiveness_scores = [pattern.get('success_rate', 0.5) 
+                                  for pattern in self.meta_learning_patterns.values()]
+            
+            return sum(effectiveness_scores) / len(effectiveness_scores) if effectiveness_scores else 0.5
+            
+        except Exception:
+            return 0.5
 
 
 if __name__ == "__main__":
