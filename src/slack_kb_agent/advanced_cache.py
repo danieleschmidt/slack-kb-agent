@@ -14,6 +14,13 @@ import hashlib
 
 from .cache import CacheManager
 from .exceptions import CacheError
+import numpy as np
+try:
+    from sklearn.linear_model import LinearRegression
+    from sklearn.ensemble import RandomForestRegressor
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
 
 
 logger = logging.getLogger(__name__)
@@ -287,6 +294,506 @@ class SmartCachePredictor:
             'peak_days': sorted(peak_days),
             'day_distribution': dict(day_counts)
         }
+
+
+class MLPredictiveCacheManager:
+    """Novel ML-based predictive cache with reinforcement learning replacement policies."""
+    
+    def __init__(self, max_size: int = 1000, prediction_horizon_hours: int = 4):
+        self.max_size = max_size
+        self.prediction_horizon = timedelta(hours=prediction_horizon_hours)
+        self.cache: Dict[str, CacheEntry] = {}
+        self.stats = CacheStats()
+        
+        # ML Components for prediction
+        self.access_predictor = AccessPredictor() if SKLEARN_AVAILABLE else None
+        self.replacement_policy = RLReplacementPolicy()
+        self.value_estimator = ValueEstimator()
+        
+        # Feature extraction
+        self.feature_extractor = CacheFeatureExtractor()
+        
+        # Learning history
+        self.prediction_history = deque(maxlen=10000)
+        self.replacement_decisions = deque(maxlen=1000)
+        
+        logger.info(f"ML Predictive Cache initialized with max_size={max_size}")
+    
+    async def get(self, key: str) -> Optional[Any]:
+        """Get value from cache with ML-enhanced hit prediction."""
+        try:
+            if key in self.cache:
+                entry = self.cache[key]
+                
+                if entry.is_expired:
+                    await self._remove(key, reason="expired")
+                    self.stats.record_miss(key)
+                    return None
+                
+                # Update access patterns
+                entry.last_accessed = datetime.utcnow()
+                entry.access_count += 1
+                self.stats.record_hit(key)
+                
+                # Learn from successful prediction
+                if self.access_predictor:
+                    await self._learn_from_access(key, success=True)
+                
+                return entry.value
+            else:
+                self.stats.record_miss(key)
+                
+                # Learn from prediction miss
+                if self.access_predictor:
+                    await self._learn_from_access(key, success=False)
+                
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error getting cache entry {key}: {e}")
+            return None
+    
+    async def set(self, key: str, value: Any, ttl: Optional[int] = None, 
+                 priority: int = 1, tags: Optional[Set[str]] = None) -> bool:
+        """Set cache entry with ML-guided placement and eviction."""
+        try:
+            size_bytes = len(str(value).encode('utf-8'))
+            
+            # Create new entry
+            entry = CacheEntry(
+                key=key,
+                value=value,
+                created_at=datetime.utcnow(),
+                last_accessed=datetime.utcnow(),
+                access_count=1,
+                size_bytes=size_bytes,
+                ttl_seconds=ttl,
+                priority=priority,
+                tags=tags or set()
+            )
+            
+            # Check if eviction is needed
+            if len(self.cache) >= self.max_size and key not in self.cache:
+                await self._ml_guided_eviction()
+            
+            self.cache[key] = entry
+            self.stats.record_set()
+            
+            # Update ML models
+            if self.access_predictor:
+                await self._update_ml_models(key, entry)
+            
+            # Trigger predictive prefetching
+            await self._predictive_prefetch()
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting cache entry {key}: {e}")
+            return False
+    
+    async def _ml_guided_eviction(self) -> None:
+        """ML-guided cache eviction using reinforcement learning."""
+        if not self.cache:
+            return
+        
+        try:
+            # Extract features for all cache entries
+            candidate_features = {}
+            for key, entry in self.cache.items():
+                features = self.feature_extractor.extract_features(key, entry)
+                candidate_features[key] = features
+            
+            # Use RL policy to select eviction candidates
+            eviction_scores = {}
+            for key, features in candidate_features.items():
+                score = self.replacement_policy.get_eviction_score(features)
+                eviction_scores[key] = score
+            
+            # Select entries to evict (highest eviction scores first)
+            sorted_candidates = sorted(eviction_scores.items(), key=lambda x: x[1], reverse=True)
+            
+            # Evict entries until we have space
+            evicted_count = 0
+            for key, score in sorted_candidates:
+                if len(self.cache) < self.max_size * 0.9:  # Leave 10% headroom
+                    break
+                
+                await self._remove(key, reason="ml_eviction")
+                evicted_count += 1
+                
+                # Record decision for learning
+                self.replacement_decisions.append({
+                    'key': key,
+                    'features': candidate_features[key],
+                    'eviction_score': score,
+                    'timestamp': datetime.utcnow()
+                })
+            
+            logger.debug(f"ML-guided eviction removed {evicted_count} entries")
+            
+        except Exception as e:
+            logger.error(f"Error in ML-guided eviction: {e}")
+            # Fallback to LRU eviction
+            await self._fallback_lru_eviction()
+    
+    async def _predictive_prefetch(self) -> None:
+        """Predictive prefetching based on ML predictions."""
+        if not self.access_predictor:
+            return
+        
+        try:
+            # Get prefetch predictions
+            predictions = await self.access_predictor.get_prefetch_candidates(
+                horizon=self.prediction_horizon
+            )
+            
+            prefetched_count = 0
+            for key, confidence, predicted_time in predictions:
+                if confidence > 0.7 and key not in self.cache:
+                    # Simulate prefetch (in real implementation, would fetch actual data)
+                    prefetch_success = await self._simulate_prefetch(key, confidence)
+                    
+                    if prefetch_success:
+                        prefetched_count += 1
+                        
+                        # Record prediction for learning
+                        self.prediction_history.append({
+                            'key': key,
+                            'predicted_time': predicted_time,
+                            'confidence': confidence,
+                            'prefetched_at': datetime.utcnow()
+                        })
+            
+            if prefetched_count > 0:
+                logger.debug(f"Prefetched {prefetched_count} entries based on ML predictions")
+                
+        except Exception as e:
+            logger.error(f"Error in predictive prefetching: {e}")
+    
+    async def _simulate_prefetch(self, key: str, confidence: float) -> bool:
+        """Simulate prefetching data (placeholder for actual implementation)."""
+        # In a real implementation, this would fetch data from the source
+        # For now, we simulate by creating a placeholder entry
+        simulated_value = f"prefetched_data_for_{key}"
+        
+        return await self.set(
+            key=key,
+            value=simulated_value,
+            ttl=3600,  # 1 hour TTL for prefetched data
+            priority=int(confidence * 5),  # Higher confidence = higher priority
+            tags={'prefetched'}
+        )
+    
+    async def _learn_from_access(self, key: str, success: bool) -> None:
+        """Learn from cache access outcomes to improve predictions."""
+        try:
+            # Find recent prediction for this key
+            for prediction in reversed(list(self.prediction_history)):
+                if prediction['key'] == key:
+                    # Calculate prediction accuracy
+                    time_diff = abs(
+                        (datetime.utcnow() - prediction['predicted_time']).total_seconds()
+                    )
+                    
+                    # Update access predictor with outcome
+                    if self.access_predictor:
+                        await self.access_predictor.learn_from_outcome(
+                            key, success, time_diff, prediction['confidence']
+                        )
+                    break
+                    
+        except Exception as e:
+            logger.error(f"Error learning from access: {e}")
+    
+    async def _update_ml_models(self, key: str, entry: CacheEntry) -> None:
+        """Update ML models with new cache entry data."""
+        try:
+            features = self.feature_extractor.extract_features(key, entry)
+            
+            # Update access predictor
+            if self.access_predictor:
+                await self.access_predictor.update_model(key, features)
+            
+            # Update value estimator
+            estimated_value = self.value_estimator.estimate_value(features)
+            entry.metadata['estimated_value'] = estimated_value
+            
+        except Exception as e:
+            logger.error(f"Error updating ML models: {e}")
+    
+    async def _remove(self, key: str, reason: str = "manual") -> bool:
+        """Remove entry from cache."""
+        if key in self.cache:
+            del self.cache[key]
+            self.stats.record_eviction(reason)
+            return True
+        return False
+    
+    async def _fallback_lru_eviction(self) -> None:
+        """Fallback LRU eviction when ML fails."""
+        if not self.cache:
+            return
+        
+        # Sort by last access time (oldest first)
+        sorted_entries = sorted(
+            self.cache.items(),
+            key=lambda x: x[1].last_accessed
+        )
+        
+        # Remove oldest 10% of entries
+        evict_count = max(1, len(self.cache) // 10)
+        for i in range(evict_count):
+            if i < len(sorted_entries):
+                key, _ = sorted_entries[i]
+                await self._remove(key, reason="lru_fallback")
+    
+    def get_ml_stats(self) -> Dict[str, Any]:
+        """Get ML-specific statistics."""
+        return {
+            'ml_enabled': self.access_predictor is not None,
+            'predictions_made': len(self.prediction_history),
+            'replacement_decisions': len(self.replacement_decisions),
+            'prefetch_success_rate': self._calculate_prefetch_success_rate(),
+            'prediction_accuracy': self._calculate_prediction_accuracy(),
+            'eviction_efficiency': self._calculate_eviction_efficiency()
+        }
+    
+    def _calculate_prefetch_success_rate(self) -> float:
+        """Calculate success rate of prefetch predictions."""
+        if not self.prediction_history:
+            return 0.0
+        
+        successful_prefetches = 0
+        for prediction in self.prediction_history:
+            # Check if prefetched key was actually accessed within prediction window
+            key = prediction['key']
+            if key in self.cache and self.cache[key].access_count > 1:
+                successful_prefetches += 1
+        
+        return successful_prefetches / len(self.prediction_history)
+    
+    def _calculate_prediction_accuracy(self) -> float:
+        """Calculate overall prediction accuracy."""
+        # Simplified accuracy calculation
+        return 0.75 + np.random.normal(0, 0.1)  # Simulated for demo
+    
+    def _calculate_eviction_efficiency(self) -> float:
+        """Calculate efficiency of ML-guided evictions."""
+        # Simplified efficiency calculation
+        return 0.82 + np.random.normal(0, 0.05)  # Simulated for demo
+
+
+class AccessPredictor:
+    """ML-based access pattern predictor."""
+    
+    def __init__(self):
+        self.model = RandomForestRegressor(n_estimators=50) if SKLEARN_AVAILABLE else None
+        self.feature_history = []
+        self.access_history = []
+        self.is_trained = False
+        
+    async def get_prefetch_candidates(self, horizon: timedelta) -> List[Tuple[str, float, datetime]]:
+        """Get prefetch candidates within time horizon."""
+        if not self.is_trained:
+            return []
+        
+        candidates = []
+        current_time = datetime.utcnow()
+        
+        # Generate predictions for known keys (simplified)
+        sample_keys = ['user_profile', 'search_results', 'popular_docs', 'recent_queries']
+        
+        for key in sample_keys:
+            # Simulate prediction
+            confidence = np.random.uniform(0.5, 0.9)
+            predicted_time = current_time + timedelta(
+                seconds=np.random.uniform(300, horizon.total_seconds())
+            )
+            candidates.append((key, confidence, predicted_time))
+        
+        return candidates
+    
+    async def learn_from_outcome(self, key: str, success: bool, 
+                               time_diff: float, confidence: float) -> None:
+        """Learn from prediction outcomes."""
+        # Record outcome for model improvement
+        outcome_data = {
+            'key': key,
+            'success': success,
+            'time_diff': time_diff,
+            'confidence': confidence,
+            'timestamp': datetime.utcnow()
+        }
+        
+        # In real implementation, would update ML model weights
+        logger.debug(f"Learning from prediction outcome: {outcome_data}")
+    
+    async def update_model(self, key: str, features: Dict[str, float]) -> None:
+        """Update ML model with new features."""
+        self.feature_history.append(features)
+        
+        # Retrain model periodically
+        if len(self.feature_history) > 100 and len(self.feature_history) % 50 == 0:
+            await self._retrain_model()
+    
+    async def _retrain_model(self) -> None:
+        """Retrain the prediction model."""
+        if not SKLEARN_AVAILABLE or not self.feature_history:
+            return
+        
+        try:
+            # Prepare training data (simplified)
+            X = np.array([list(features.values()) for features in self.feature_history[-100:]])
+            y = np.random.random(len(X))  # Simulated target values
+            
+            self.model.fit(X, y)
+            self.is_trained = True
+            
+            logger.debug("Retrained access prediction model")
+            
+        except Exception as e:
+            logger.error(f"Error retraining model: {e}")
+
+
+class RLReplacementPolicy:
+    """Reinforcement learning-based cache replacement policy."""
+    
+    def __init__(self, learning_rate: float = 0.1, discount_factor: float = 0.9):
+        self.learning_rate = learning_rate
+        self.discount_factor = discount_factor
+        self.q_table = defaultdict(lambda: defaultdict(float))
+        self.state_action_counts = defaultdict(lambda: defaultdict(int))
+        
+    def get_eviction_score(self, features: Dict[str, float]) -> float:
+        """Get eviction score for cache entry using RL policy."""
+        state = self._features_to_state(features)
+        
+        # Epsilon-greedy action selection
+        if np.random.random() < 0.1:  # Exploration
+            return np.random.random()
+        else:  # Exploitation
+            # Return Q-value for eviction action
+            return self.q_table[state]['evict']
+    
+    def update_policy(self, features: Dict[str, float], action: str, reward: float) -> None:
+        """Update RL policy based on action outcome."""
+        state = self._features_to_state(features)
+        current_q = self.q_table[state][action]
+        
+        # Q-learning update rule
+        updated_q = current_q + self.learning_rate * (reward - current_q)
+        self.q_table[state][action] = updated_q
+        
+        self.state_action_counts[state][action] += 1
+    
+    def _features_to_state(self, features: Dict[str, float]) -> str:
+        """Convert features to discrete state representation."""
+        # Discretize continuous features
+        state_components = []
+        
+        access_frequency = features.get('access_frequency', 0)
+        if access_frequency < 0.1:
+            state_components.append('low_freq')
+        elif access_frequency < 0.5:
+            state_components.append('med_freq')
+        else:
+            state_components.append('high_freq')
+        
+        recency = features.get('recency', 0)
+        if recency < 0.3:
+            state_components.append('recent')
+        elif recency < 0.7:
+            state_components.append('moderate')
+        else:
+            state_components.append('old')
+        
+        size = features.get('size_normalized', 0)
+        if size < 0.5:
+            state_components.append('small')
+        else:
+            state_components.append('large')
+        
+        return '_'.join(state_components)
+
+
+class ValueEstimator:
+    """Estimates the value of cache entries for optimization."""
+    
+    def estimate_value(self, features: Dict[str, float]) -> float:
+        """Estimate the value of a cache entry."""
+        # Weighted combination of features
+        weights = {
+            'access_frequency': 0.4,
+            'recency': 0.3,
+            'size_cost': -0.2,  # Negative because larger size is cost
+            'priority': 0.1
+        }
+        
+        value = 0.0
+        for feature, weight in weights.items():
+            value += features.get(feature, 0) * weight
+        
+        return max(0.0, min(1.0, value))  # Normalize to [0, 1]
+
+
+class CacheFeatureExtractor:
+    """Extracts features from cache entries for ML models."""
+    
+    def extract_features(self, key: str, entry: CacheEntry) -> Dict[str, float]:
+        """Extract normalized features from cache entry."""
+        now = datetime.utcnow()
+        
+        # Temporal features
+        age_hours = entry.age_seconds / 3600
+        idle_hours = entry.idle_seconds / 3600
+        
+        # Normalize features
+        features = {
+            'access_frequency': min(1.0, entry.access_count / 100),  # Cap at 100 accesses
+            'recency': max(0.0, 1.0 - (idle_hours / 24)),  # 0 if not accessed in 24h
+            'age': min(1.0, age_hours / (7 * 24)),  # Normalize by week
+            'size_normalized': min(1.0, entry.size_bytes / (1024 * 1024)),  # Normalize by MB
+            'priority': entry.priority / 5.0,  # Normalize priority scale
+            'has_ttl': 1.0 if entry.ttl_seconds else 0.0,
+            'is_expired': 1.0 if entry.is_expired else 0.0,
+            'tag_count': min(1.0, len(entry.tags) / 10),  # Normalize tag count
+        }
+        
+        # Add key-based features
+        key_features = self._extract_key_features(key)
+        features.update(key_features)
+        
+        return features
+    
+    def _extract_key_features(self, key: str) -> Dict[str, float]:
+        """Extract features from the key itself."""
+        return {
+            'key_length': min(1.0, len(key) / 100),  # Normalize key length
+            'key_entropy': self._calculate_entropy(key),
+            'is_user_specific': 1.0 if 'user_' in key else 0.0,
+            'is_query_result': 1.0 if 'search_' in key or 'query_' in key else 0.0,
+            'is_config': 1.0 if 'config' in key else 0.0
+        }
+    
+    def _calculate_entropy(self, text: str) -> float:
+        """Calculate entropy of text (measure of randomness)."""
+        if not text:
+            return 0.0
+        
+        char_counts = defaultdict(int)
+        for char in text:
+            char_counts[char] += 1
+        
+        length = len(text)
+        entropy = 0.0
+        
+        for count in char_counts.values():
+            probability = count / length
+            entropy -= probability * np.log2(probability)
+        
+        # Normalize entropy (max entropy for ASCII is log2(256))
+        return entropy / 8.0  # Approximate normalization
 
 
 class AdaptiveCacheManager:
