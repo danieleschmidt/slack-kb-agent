@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Iterable, List, Dict, Any, Sequence
+from typing import Any, Dict, Iterable, List, Sequence
 
 from .models import Document
 

@@ -1,9 +1,9 @@
 import argparse
 from pathlib import Path
 
-from .knowledge_base import KnowledgeBase
 from .analytics import UsageAnalytics
-from .query_processor import QueryProcessor, Query
+from .knowledge_base import KnowledgeBase
+from .query_processor import Query, QueryProcessor
 
 
 def main(argv: list[str] | None = None) -> None:

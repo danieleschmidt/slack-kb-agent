@@ -2,32 +2,26 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
-from uuid import uuid4
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select, func, and_, or_, desc, distinct
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_, desc, distinct, func, select
 
-from .base_repository import BaseRepository
-from ..database.models import (
-    AnalyticsEventModel, 
-    SearchResultModel, 
-    UserProfileModel,
-    KnowledgeBaseStatsModel
-)
 from ..database.connection import get_db_session
+from ..database.models import (
+    AnalyticsEventModel,
+)
 from ..exceptions import RepositoryError
-
+from .base_repository import BaseRepository
 
 logger = logging.getLogger(__name__)
 
 
 class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
     """Repository for analytics events and usage tracking."""
-    
+
     def __init__(self):
         super().__init__(AnalyticsEventModel)
-    
+
     async def record_event(
         self,
         event_type: str,
@@ -54,13 +48,13 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                 'metadata': metadata or {},
                 'timestamp': datetime.utcnow()
             }
-            
+
             return await self.create(**event_data)
-            
+
         except Exception as e:
             logger.error(f"Failed to record analytics event: {e}")
             raise RepositoryError(f"Event recording failed: {e}")
-    
+
     async def get_user_statistics(
         self,
         user_id: str,
@@ -70,7 +64,7 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
         try:
             async with get_db_session() as session:
                 cutoff_date = datetime.utcnow() - timedelta(days=days)
-                
+
                 # Basic counts
                 total_queries = await session.scalar(
                     select(func.count(AnalyticsEventModel.id))
@@ -82,7 +76,7 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                         )
                     )
                 )
-                
+
                 successful_queries = await session.scalar(
                     select(func.count(AnalyticsEventModel.id))
                     .where(
@@ -94,7 +88,7 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                         )
                     )
                 )
-                
+
                 # Average response time
                 avg_response_time = await session.scalar(
                     select(func.avg(AnalyticsEventModel.response_time_ms))
@@ -107,7 +101,7 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                         )
                     )
                 )
-                
+
                 # Query patterns by hour
                 query_by_hour = await session.execute(
                     select(
@@ -123,13 +117,13 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                     )
                     .group_by(func.extract('hour', AnalyticsEventModel.timestamp))
                 )
-                
+
                 # Most recent activity
                 last_activity = await session.scalar(
                     select(func.max(AnalyticsEventModel.timestamp))
                     .where(AnalyticsEventModel.user_id == user_id)
                 )
-                
+
                 return {
                     'user_id': user_id,
                     'period_days': days,
@@ -141,11 +135,11 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                     'last_activity': last_activity,
                     'generated_at': datetime.utcnow().isoformat()
                 }
-                
+
         except Exception as e:
             logger.error(f"Failed to get user statistics for {user_id}: {e}")
             raise RepositoryError(f"User statistics query failed: {e}")
-    
+
     async def get_popular_queries(
         self,
         limit: int = 20,
@@ -156,7 +150,7 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
         try:
             async with get_db_session() as session:
                 cutoff_date = datetime.utcnow() - timedelta(days=days)
-                
+
                 # Group by normalized query and count occurrences
                 popular_queries = await session.execute(
                     select(
@@ -180,7 +174,7 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                     .order_by(desc(func.count(AnalyticsEventModel.id)))
                     .limit(limit)
                 )
-                
+
                 results = []
                 for row in popular_queries:
                     results.append({
@@ -190,13 +184,13 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                         'success_rate': row.successful_count / row.frequency if row.frequency > 0 else 0,
                         'unique_users': row.unique_users
                     })
-                
+
                 return results
-                
+
         except Exception as e:
             logger.error(f"Failed to get popular queries: {e}")
             raise RepositoryError(f"Popular queries query failed: {e}")
-    
+
     async def get_failure_patterns(
         self,
         days: int = 7,
@@ -206,7 +200,7 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
         try:
             async with get_db_session() as session:
                 cutoff_date = datetime.utcnow() - timedelta(days=days)
-                
+
                 # Find queries with high failure rates
                 failure_patterns = await session.execute(
                     select(
@@ -244,7 +238,7 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                     )
                     .limit(limit)
                 )
-                
+
                 results = []
                 for row in failure_patterns:
                     failure_rate = row.failure_count / row.total_attempts if row.total_attempts > 0 else 0
@@ -255,13 +249,13 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                         'failure_rate': failure_rate,
                         'error_messages': [msg for msg in row.error_messages if msg is not None]
                     })
-                
+
                 return results
-                
+
         except Exception as e:
             logger.error(f"Failed to get failure patterns: {e}")
             raise RepositoryError(f"Failure patterns query failed: {e}")
-    
+
     async def get_performance_trends(
         self,
         days: int = 30,
@@ -271,7 +265,7 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
         try:
             async with get_db_session() as session:
                 cutoff_date = datetime.utcnow() - timedelta(days=days)
-                
+
                 # Choose date grouping based on granularity
                 if granularity == 'hourly':
                     date_trunc = func.date_trunc('hour', AnalyticsEventModel.timestamp)
@@ -279,7 +273,7 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                     date_trunc = func.date_trunc('day', AnalyticsEventModel.timestamp)
                 else:  # weekly
                     date_trunc = func.date_trunc('week', AnalyticsEventModel.timestamp)
-                
+
                 # Performance metrics over time
                 trends = await session.execute(
                     select(
@@ -303,7 +297,7 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                     .group_by(date_trunc)
                     .order_by(date_trunc)
                 )
-                
+
                 trend_data = []
                 for row in trends:
                     success_rate = row.successful_queries / row.total_queries if row.total_queries > 0 else 0
@@ -315,18 +309,18 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                         'success_rate': success_rate,
                         'active_users': row.active_users
                     })
-                
+
                 return {
                     'granularity': granularity,
                     'period_days': days,
                     'data_points': trend_data,
                     'generated_at': datetime.utcnow().isoformat()
                 }
-                
+
         except Exception as e:
             logger.error(f"Failed to get performance trends: {e}")
             raise RepositoryError(f"Performance trends query failed: {e}")
-    
+
     async def cleanup_old_events(
         self,
         retention_days: int = 90
@@ -335,24 +329,24 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
         try:
             async with get_db_session() as session:
                 cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
-                
+
                 # Delete old events
                 result = await session.execute(
                     AnalyticsEventModel.__table__.delete().where(
                         AnalyticsEventModel.timestamp < cutoff_date
                     )
                 )
-                
+
                 await session.commit()
                 deleted_count = result.rowcount
-                
+
                 logger.info(f"Cleaned up {deleted_count} old analytics events")
                 return deleted_count
-                
+
         except Exception as e:
             logger.error(f"Failed to cleanup old events: {e}")
             raise RepositoryError(f"Cleanup operation failed: {e}")
-    
+
     async def get_usage_dashboard_data(self) -> Dict[str, Any]:
         """Get comprehensive dashboard data for usage analytics."""
         try:
@@ -360,19 +354,19 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
             current_period = await self._get_period_stats(7)
             previous_period = await self._get_period_stats(7, offset_days=7)
             monthly_stats = await self._get_period_stats(30)
-            
+
             # Calculate trends
             query_trend = self._calculate_trend(
-                current_period['total_queries'], 
+                current_period['total_queries'],
                 previous_period['total_queries']
             )
-            
+
             response_time_trend = self._calculate_trend(
                 current_period['avg_response_time'],
                 previous_period['avg_response_time'],
                 inverse=True  # Lower is better for response time
             )
-            
+
             return {
                 'current_week': current_period,
                 'previous_week': previous_period,
@@ -387,20 +381,20 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                 },
                 'generated_at': datetime.utcnow().isoformat()
             }
-            
+
         except Exception as e:
             logger.error(f"Failed to get dashboard data: {e}")
             raise RepositoryError(f"Dashboard data query failed: {e}")
-    
+
     async def _get_period_stats(
-        self, 
-        days: int, 
+        self,
+        days: int,
         offset_days: int = 0
     ) -> Dict[str, Any]:
         """Get statistics for a specific period."""
         end_date = datetime.utcnow() - timedelta(days=offset_days)
         start_date = end_date - timedelta(days=days)
-        
+
         async with get_db_session() as session:
             # Query period statistics
             stats = await session.execute(
@@ -420,11 +414,11 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                     )
                 )
             )
-            
+
             row = stats.first()
             total_queries = row.total_queries or 0
             successful_queries = row.successful_queries or 0
-            
+
             return {
                 'total_queries': total_queries,
                 'successful_queries': successful_queries,
@@ -434,22 +428,22 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
                 'start_date': start_date.isoformat(),
                 'end_date': end_date.isoformat()
             }
-    
+
     def _calculate_trend(
-        self, 
-        current_value: Optional[float], 
+        self,
+        current_value: Optional[float],
         previous_value: Optional[float],
         inverse: bool = False
     ) -> Dict[str, Any]:
         """Calculate trend percentage and direction."""
         if current_value is None or previous_value is None or previous_value == 0:
             return {'percentage': 0, 'direction': 'stable', 'status': 'neutral'}
-        
+
         percentage = ((current_value - previous_value) / previous_value) * 100
-        
+
         if inverse:
             percentage = -percentage
-        
+
         if percentage > 5:
             direction = 'up'
             status = 'positive'
@@ -459,7 +453,7 @@ class AnalyticsRepository(BaseRepository[AnalyticsEventModel]):
         else:
             direction = 'stable'
             status = 'neutral'
-        
+
         return {
             'percentage': round(percentage, 1),
             'direction': direction,

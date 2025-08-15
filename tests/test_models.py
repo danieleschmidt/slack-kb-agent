@@ -50,26 +50,20 @@ class TestDocument:
         assert doc.metadata["tags"] == ["important", "documentation"]
     
     def test_document_empty_content(self):
-        """Test document with empty content."""
-        doc = Document(
-            content="",
-            source="empty_source"
-        )
-        
-        assert doc.content == ""
-        assert doc.source == "empty_source"
-        assert doc.metadata == {}
+        """Test document with empty content raises error."""
+        with pytest.raises(TypeError, match="Document content is required"):
+            Document(
+                content="",
+                source="empty_source"
+            )
     
     def test_document_empty_source(self):
-        """Test document with empty source."""
-        doc = Document(
-            content="Content without source",
-            source=""
-        )
-        
-        assert doc.content == "Content without source"
-        assert doc.source == ""
-        assert doc.metadata == {}
+        """Test document with empty source raises error."""
+        with pytest.raises(TypeError, match="Document source is required"):
+            Document(
+                content="Content without source",
+                source=""
+            )
     
     def test_document_none_values_not_allowed(self):
         """Test that None values are not allowed for required fields."""
