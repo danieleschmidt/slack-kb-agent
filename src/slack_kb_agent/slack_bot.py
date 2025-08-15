@@ -5,17 +5,17 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
-from .knowledge_base import KnowledgeBase
-from .models import Document
 from .analytics import UsageAnalytics
-from .query_processor import QueryProcessor
-from .validation import validate_slack_input, sanitize_query, get_validator
-from .rate_limiting import get_user_rate_limiter, RateLimitResult
-from .llm import get_response_generator, LLMResponse
 from .configuration import get_slack_bot_config
 from .constants import SlackBotDefaults
+from .knowledge_base import KnowledgeBase
+from .llm import get_response_generator
+from .models import Document
+from .query_processor import QueryProcessor
+from .rate_limiting import get_user_rate_limiter
+from .validation import sanitize_query, validate_slack_input
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ except ImportError:
 
 class SlackBotServer:
     """Slack bot server for handling knowledge base queries."""
-    
+
     def __init__(
         self,
         knowledge_base: KnowledgeBase,
@@ -62,7 +62,7 @@ class SlackBotServer:
                 "Slack dependencies not available. "
                 "Install with: pip install slack-bolt slack-sdk"
             )
-        
+
         # Validate tokens (basic security check)
         if not slack_bot_token.startswith("xoxb-"):
             raise ValueError("Invalid bot token format. Must start with 'xoxb-'")
@@ -70,9 +70,9 @@ class SlackBotServer:
             raise ValueError("Invalid app token format. Must start with 'xapp-'")
         if len(signing_secret) < SlackBotDefaults.MIN_SIGNING_SECRET_LENGTH:
             raise ValueError(f"Signing secret too short. Must be at least {SlackBotDefaults.MIN_SIGNING_SECRET_LENGTH} characters")
-        
+
         config = get_slack_bot_config()
-        
+
         self.knowledge_base = knowledge_base
         self.slack_bot_token = slack_bot_token
         self.slack_app_token = slack_app_token
@@ -80,31 +80,31 @@ class SlackBotServer:
         self.analytics = analytics
         self.max_results = max_results if max_results is not None else config.max_results_default
         self.response_timeout = response_timeout if response_timeout is not None else config.response_timeout
-        
+
         # Initialize query processor
         self.query_processor = QueryProcessor(
             kb=knowledge_base,
             analytics=analytics
         )
-        
+
         # Initialize Slack app
         self.app = App(
             token=slack_bot_token,
             signing_secret=signing_secret
         )
-        
+
         # Handler will be set when start() is called
         self.handler: Optional[SocketModeHandler] = None
         self._running = False
-        
+
         # Register event handlers
         self._register_handlers()
-        
+
         logger.info("Slack bot server initialized")
-    
+
     def _register_handlers(self) -> None:
         """Register Slack event handlers."""
-        
+
         @self.app.event("app_mention")
         def handle_app_mention(event, say, client):
             """Handle @bot mentions in channels."""
@@ -117,7 +117,7 @@ class SlackBotServer:
                 # Catch-all for unexpected errors to prevent Slack event handler from crashing
                 logger.exception(f"Unexpected error handling app mention: {e}")
                 say("Sorry, I encountered an unexpected error. Please try again.")
-        
+
         @self.app.event("message")
         def handle_direct_message(event, say, client):
             """Handle direct messages to the bot."""
@@ -132,7 +132,7 @@ class SlackBotServer:
                     # Catch-all for unexpected errors to prevent Slack event handler from crashing
                     logger.exception(f"Unexpected error handling direct message: {e}")
                     say("Sorry, I encountered an unexpected error. Please try again.")
-        
+
         @self.app.command("/kb")
         def handle_kb_command(ack, command, say, client):
             """Handle /kb slash commands."""
@@ -141,7 +141,7 @@ class SlackBotServer:
                 query = command.get("text", "").strip()
                 user_id = command.get("user_id")
                 channel_id = command.get("channel_id")
-                
+
                 # Check rate limiting for slash commands
                 rate_limiter = get_user_rate_limiter()
                 rate_result = rate_limiter.check_user_rate_limit(user_id, query)
@@ -149,11 +149,11 @@ class SlackBotServer:
                     logger.warning(f"Slash command rate limit exceeded for user {user_id}: {rate_result.error_message}")
                     say(f"⏰ {rate_result.error_message}")
                     return
-                
+
                 if not query:
                     say(self._get_help_text())
                     return
-                
+
                 # Process special commands (these are safe)
                 if query.lower() in ["help", "--help", "-h"]:
                     say(self._get_help_text())
@@ -161,23 +161,23 @@ class SlackBotServer:
                 elif query.lower() in ["stats", "statistics"]:
                     say(self._get_stats_text())
                     return
-                
+
                 # Sanitize and validate the query for search
                 sanitized_query = sanitize_query(query)
                 if not sanitized_query:
                     logger.warning(f"Dangerous slash command query blocked from user {user_id}: {query}")
                     say("Sorry, I can't process that request. Please try a different search query.")
                     return
-                
+
                 # Log if query was modified during sanitization
                 if sanitized_query != query:
                     logger.info(f"Slash command query sanitized for user {user_id}: '{query}' -> '{sanitized_query}'")
-                
+
                 # Process search query
                 results = self.process_query(sanitized_query, user_id, channel_id)
                 response = self.format_response(results, sanitized_query, user_id)
                 say(response)
-                
+
             except (ValueError, TypeError, KeyError) as e:
                 logger.error(f"Error handling slash command - invalid data: {e}")
                 say("Sorry, I encountered an error processing your command.")
@@ -185,11 +185,11 @@ class SlackBotServer:
                 # Catch-all for unexpected errors to prevent Slack event handler from crashing
                 logger.exception(f"Unexpected error handling slash command: {e}")
                 say("Sorry, I encountered an unexpected error. Please try again.")
-    
+
     def _handle_query_event(self, event: Dict[str, Any], say, client, is_mention: bool) -> None:
         """Handle query events from mentions or DMs."""
         user_id = event.get("user")
-        
+
         # Check rate limiting first
         rate_limiter = get_user_rate_limiter()
         rate_result = rate_limiter.check_user_rate_limit(user_id, event.get("text", ""))
@@ -197,17 +197,17 @@ class SlackBotServer:
             logger.warning(f"Rate limit exceeded for user {user_id}: {rate_result.error_message}")
             say(f"⏰ {rate_result.error_message}")
             return
-        
+
         # Validate Slack input
         validation_result = validate_slack_input(event)
         if not validation_result.is_valid:
             logger.warning(f"Invalid Slack input from user {user_id}: {validation_result.error_message}")
             say("Sorry, I couldn't process your request. Please try rephrasing your question.")
             return
-        
+
         text = event.get("text", "")
         channel_id = event.get("channel")
-        
+
         # Extract query from mention (remove bot mention)
         if is_mention:
             # Remove <@UBOT_ID> from the text
@@ -215,31 +215,31 @@ class SlackBotServer:
             query = re.sub(bot_mention_pattern, '', text).strip()
         else:
             query = text.strip()
-        
+
         if not query:
             say(self._get_help_text())
             return
-        
+
         # Sanitize and validate the query
         sanitized_query = sanitize_query(query)
         if not sanitized_query:
             logger.warning(f"Dangerous query blocked from user {user_id}: {query}")
             say("Sorry, I can't process that request. Please try a different question.")
             return
-        
+
         # Log if query was modified during sanitization
         if sanitized_query != query:
             logger.info(f"Query sanitized for user {user_id}: '{query}' -> '{sanitized_query}'")
-        
+
         # Process the sanitized query
         results = self.process_query(sanitized_query, user_id, channel_id)
         response = self.format_response(results, sanitized_query, user_id)
         say(response)
-    
+
     def process_query(
-        self, 
-        query: str, 
-        user_id: Optional[str] = None, 
+        self,
+        query: str,
+        user_id: Optional[str] = None,
         channel_id: Optional[str] = None
     ) -> List[Document]:
         """Process a user query and return relevant documents.
@@ -254,20 +254,20 @@ class SlackBotServer:
         """
         if not query.strip():
             return []
-        
+
         try:
             # Use semantic search if available, fallback to keyword search
             if hasattr(self.knowledge_base, 'search_semantic'):
                 results = self.knowledge_base.search_semantic(query, top_k=self.max_results)
             else:
                 results = self.knowledge_base.search(query)[:self.max_results]
-            
+
             # Record analytics if available
             if self.analytics and user_id and channel_id:
                 self.analytics.record_query(query, user=user_id, channel=channel_id)
-            
+
             return results
-            
+
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error(f"Error processing query '{query}' - data/attribute error: {e}")
             # Fallback to basic search on error
@@ -284,7 +284,7 @@ class SlackBotServer:
             except Exception as fallback_error:
                 logger.exception(f"Fallback search also failed unexpectedly: {fallback_error}")
                 return []
-    
+
     def format_response(self, documents: List[Document], query: str, user_id: Optional[str] = None) -> Dict[str, Any]:
         """Format search results for Slack response with optional LLM enhancement.
         
@@ -301,7 +301,7 @@ class SlackBotServer:
                 "text": self._get_help_text(),
                 "response_type": "ephemeral"
             }
-        
+
         # Try to generate intelligent response using LLM
         response_generator = get_response_generator()
         if response_generator.is_available() and documents:
@@ -311,11 +311,11 @@ class SlackBotServer:
                     context_documents=documents,
                     user_id=user_id
                 )
-                
+
                 if llm_response.success and llm_response.content.strip():
                     # Use LLM-generated response with source citations
                     response_text = f"🤖 {llm_response.content}\n\n"
-                    
+
                     # Add compact source citations
                     if len(documents) <= 3:
                         response_text += "📚 **Sources:** "
@@ -325,57 +325,57 @@ class SlackBotServer:
                         response_text += f"📚 **Based on {len(documents)} sources** including: "
                         sources = [f"{doc.source}" for doc in documents[:2]]
                         response_text += ", ".join(sources) + f" and {len(documents)-2} more"
-                    
+
                     response_text += "\n\n💡 _Ask follow-up questions or use `/kb help` for more options._"
-                    
+
                     return {
                         "text": response_text,
                         "response_type": "in_channel"
                     }
-                    
+
             except (ValueError, TypeError, KeyError, AttributeError) as e:
                 logger.warning(f"LLM response generation failed - data/attribute error, falling back to basic format: {e}")
             except ImportError as e:
                 logger.warning(f"LLM dependencies not available, falling back to basic format: {e}")
             except Exception as e:
                 logger.warning(f"LLM response generation failed unexpectedly, falling back to basic format: {e}")
-        
+
         # Fallback to traditional document listing format
         if not documents:
             return {
                 "text": f"🔍 No results found for '{query}'. Try rephrasing your question or check the available documentation.",
                 "response_type": "ephemeral"
             }
-        
+
         # Build traditional response with formatted results
         response_text = f"📚 Found {len(documents)} result{'s' if len(documents) != 1 else ''} for '{query}':\n\n"
-        
+
         for i, doc in enumerate(documents, 1):
             # Truncate content for readability
             content = doc.content
             if len(content) > 200:
                 content = content[:197] + "..."
-            
+
             response_text += f"*{i}. From {doc.source}*\n"
             response_text += f"```{content}```\n"
-            
+
             # Add metadata if available
             if doc.metadata:
                 if "path" in doc.metadata:
                     response_text += f"📁 _{doc.metadata['path']}_\n"
                 elif "user" in doc.metadata:
                     response_text += f"👤 _{doc.metadata['user']}_\n"
-            
+
             response_text += "\n"
-        
+
         # Add help footer
         response_text += "💡 _Use `/kb help` for more options or ask follow-up questions._"
-        
+
         return {
             "text": response_text,
             "response_type": "in_channel"
         }
-    
+
     def _get_help_text(self) -> str:
         """Generate help text for users."""
         return """🤖 *Slack Knowledge Base Assistant*
@@ -396,12 +396,12 @@ class SlackBotServer:
 • `How do I set up the development environment?`
 
 I can search through documentation, code comments, GitHub issues, and team knowledge to help answer your questions!"""
-    
+
     def _get_stats_text(self) -> str:
         """Generate statistics text."""
         if not self.analytics:
             return "📊 Analytics not enabled."
-        
+
         stats = f"""📊 *Knowledge Base Statistics*
 
 • Total queries: {self.analytics.total_queries}
@@ -410,21 +410,21 @@ I can search through documentation, code comments, GitHub issues, and team knowl
 
 *Top queries:*
 """
-        
+
         for i, (query, count) in enumerate(self.analytics.top_queries(5), 1):
             stats += f"{i}. _{query}_ ({count} times)\n"
-        
+
         return stats
-    
+
     def start(self) -> None:
         """Start the bot server using Socket Mode."""
         if not SLACK_DEPS_AVAILABLE:
             raise ImportError("Slack dependencies not available")
-        
+
         if self._running:
             logger.warning("Bot server is already running")
             return
-        
+
         try:
             self.handler = SocketModeHandler(self.app, self.slack_app_token)
             logger.info("Starting Slack bot server...")
@@ -450,19 +450,19 @@ I can search through documentation, code comments, GitHub issues, and team knowl
             self._running = False
             self.handler = None
             raise
-    
+
     def stop(self) -> None:
         """Stop the bot server gracefully."""
         if not self._running:
             logger.warning("Bot server is not running")
             return
-        
+
         logger.info("Stopping Slack bot server gracefully...")
-        
+
         try:
             # Set running flag to false first
             self._running = False
-            
+
             # Close the socket mode handler if it exists
             if self.handler is not None:
                 try:
@@ -472,17 +472,17 @@ I can search through documentation, code comments, GitHub issues, and team knowl
                         if hasattr(socket_client, 'disconnect'):
                             socket_client.disconnect()
                             logger.debug("Disconnected socket mode client")
-                    
+
                     # Close the handler
                     if hasattr(self.handler, 'close'):
                         self.handler.close()
                         logger.debug("Closed socket mode handler")
-                        
+
                 except Exception as handler_error:
                     logger.warning(f"Error closing socket mode handler: {handler_error}")
                 finally:
                     self.handler = None
-            
+
             # Flush any pending analytics data
             if self.analytics:
                 try:
@@ -491,13 +491,13 @@ I can search through documentation, code comments, GitHub issues, and team knowl
                     logger.info(f"Final analytics: {stats['total_queries']} total queries processed")
                 except Exception as analytics_error:
                     logger.warning(f"Error finalizing analytics: {analytics_error}")
-            
+
             # Give any remaining background tasks a moment to complete
             import time
             time.sleep(0.01)
-            
+
             logger.info("Bot server stopped gracefully")
-            
+
         except Exception as e:
             logger.error(f"Error during graceful shutdown: {e}")
             # Force cleanup even if graceful shutdown fails
@@ -522,22 +522,22 @@ def create_bot_from_env() -> SlackBotServer:
         "SLACK_APP_TOKEN": "App-Level Token",
         "SLACK_SIGNING_SECRET": "Signing Secret"
     }
-    
+
     missing_vars = []
     for var, description in required_env_vars.items():
         if not os.getenv(var):
             missing_vars.append(f"{var} ({description})")
-    
+
     if missing_vars:
         raise ValueError(
-            f"Missing required environment variables:\n" +
+            "Missing required environment variables:\n" +
             "\n".join(f"- {var}" for var in missing_vars)
         )
-    
+
     # Create knowledge base and analytics
     kb = KnowledgeBase()
     analytics = UsageAnalytics()
-    
+
     return SlackBotServer(
         knowledge_base=kb,
         slack_bot_token=os.getenv("SLACK_BOT_TOKEN"),

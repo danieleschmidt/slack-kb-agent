@@ -24,7 +24,12 @@ class SlackNotifier:
 
     def _default_sender(self, member_id: str, text: str) -> None:
         import requests
-        from requests.exceptions import ConnectionError, HTTPError, Timeout, RequestException
+        from requests.exceptions import (
+            ConnectionError,
+            HTTPError,
+            RequestException,
+            Timeout,
+        )
 
         payload = {"channel": member_id, "text": text}
         headers = {
@@ -32,7 +37,7 @@ class SlackNotifier:
             "Content-Type": "application/json",
             "User-Agent": "slack-kb-agent/1.0"  # Proper user agent
         }
-        
+
         try:
             response = requests.post(
                 "https://slack.com/api/chat.postMessage",

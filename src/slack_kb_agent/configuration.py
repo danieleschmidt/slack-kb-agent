@@ -15,21 +15,21 @@ from typing import Optional
 @dataclass(frozen=True)
 class AppConfig:
     """Application-wide configuration settings."""
-    
+
     debug: bool = False
     environment: str = "production"
     log_level: str = "INFO"
     metrics_enabled: bool = True
-    
+
     def __post_init__(self):
         """Validate configuration values."""
         valid_log_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
         if self.log_level not in valid_log_levels:
             raise ValueError(f"Invalid log_level: {self.log_level}. Must be one of {valid_log_levels}")
-        
+
         if not self.environment or not self.environment.strip():
             raise ValueError("Environment cannot be empty")
-    
+
     @classmethod
     def from_env(cls) -> AppConfig:
         """Create configuration from environment variables."""
@@ -44,27 +44,27 @@ class AppConfig:
 @dataclass(frozen=True)
 class SearchConfig:
     """Search engine configuration settings."""
-    
+
     min_word_length: int = 2
     max_index_size: int = 50000
     max_results_default: int = 100
     cache_size: int = 1000
     enable_indexing: bool = True
-    
+
     def __post_init__(self):
         """Validate configuration values."""
         if self.min_word_length <= 0:
             raise ValueError("min_word_length must be positive")
-        
+
         if self.max_index_size < 0:
             raise ValueError("max_index_size cannot be negative")
-        
+
         if self.max_results_default <= 0:
             raise ValueError("max_results_default must be positive")
-        
+
         if self.cache_size <= 0:
             raise ValueError("cache_size must be positive")
-    
+
     @classmethod
     def from_env(cls) -> SearchConfig:
         """Create configuration from environment variables."""
@@ -83,22 +83,22 @@ class SearchConfig:
 @dataclass(frozen=True)
 class SlackBotConfig:
     """Slack bot configuration settings."""
-    
+
     max_results_default: int = 5
     response_timeout: int = 30
     max_history_length: int = 5
-    
+
     def __post_init__(self):
         """Validate configuration values."""
         if self.max_results_default <= 0:
             raise ValueError("max_results_default must be positive")
-        
+
         if self.response_timeout <= 0:
             raise ValueError("response_timeout must be positive")
-        
+
         if self.max_history_length < 0:
             raise ValueError("max_history_length cannot be negative")
-    
+
     @classmethod
     def from_env(cls) -> SlackBotConfig:
         """Create configuration from environment variables."""
@@ -112,22 +112,22 @@ class SlackBotConfig:
 @dataclass(frozen=True)
 class VectorSearchConfig:
     """Vector search configuration settings."""
-    
+
     batch_size: int = 32
     top_k_default: int = 10
     similarity_threshold: float = 0.5
-    
+
     def __post_init__(self):
         """Validate configuration values."""
         if self.batch_size <= 0:
             raise ValueError("batch_size must be positive")
-        
+
         if self.top_k_default <= 0:
             raise ValueError("top_k_default must be positive")
-        
+
         if not (0 < self.similarity_threshold < 1):
             raise ValueError("similarity_threshold must be between 0 and 1")
-    
+
     @classmethod
     def from_env(cls) -> VectorSearchConfig:
         """Create configuration from environment variables."""

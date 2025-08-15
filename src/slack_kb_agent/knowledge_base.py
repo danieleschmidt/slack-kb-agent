@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple, Dict, Any
 import json
 import logging
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
+from .cache import get_cache_manager
 from .models import Document
+from .search_index import SearchEngine
 from .sources import BaseSource
 from .vector_search import VectorSearchEngine, is_vector_search_available
-from .cache import get_cache_manager
-from .search_index import SearchEngine
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class KnowledgeBase:
     """Aggregate documents from various sources and provide simple search."""
 
     def __init__(
-        self, 
+        self,
         enable_vector_search: bool = True,
         vector_model: str = "all-MiniLM-L6-v2",
         similarity_threshold: float = 0.5,
@@ -41,10 +41,10 @@ class KnowledgeBase:
         self.max_documents = max_documents
         self.enable_vector_search = enable_vector_search and is_vector_search_available()
         self.enable_indexed_search = enable_indexed_search
-        
+
         # Initialize search engine
         self.search_engine = SearchEngine(enable_indexing=enable_indexed_search)
-        
+
         if self.enable_vector_search:
             try:
                 self.vector_engine = VectorSearchEngine(
@@ -80,13 +80,13 @@ class KnowledgeBase:
         self.documents.append(document)
         self._enforce_document_limit()
         self._update_memory_metrics()
-        
+
         # Add to search engine
         self.search_engine.add_document(document)
-        
+
         if self.enable_vector_search and self.vector_engine:
             self.vector_engine.add_document(document)
-        
+
         # Invalidate search cache when documents are added
         cache_manager = get_cache_manager()
         invalidated = cache_manager.invalidate_search_cache()
@@ -98,18 +98,18 @@ class KnowledgeBase:
         self.documents.extend(documents)
         self._enforce_document_limit()
         self._update_memory_metrics()
-        
+
         # Add to search engine
         self.search_engine.add_documents(documents)
-        
+
         self._rebuild_vector_index()
-        
+
         # Invalidate search cache when documents are added
         cache_manager = get_cache_manager()
         invalidated = cache_manager.invalidate_search_cache()
         if invalidated > 0:
             logger.debug(f"Invalidated {invalidated} search cache entries after adding {len(documents)} documents")
-    
+
     def _rebuild_vector_index(self) -> None:
         """Rebuild the vector search index with current documents."""
         if self.enable_vector_search and self.vector_engine and self.documents:
@@ -119,11 +119,11 @@ class KnowledgeBase:
         """Return documents containing the query string (keyword search)."""
         # Use indexed search engine for better performance
         return self.search_engine.search(query)
-    
+
     def search_semantic(
-        self, 
-        query: str, 
-        top_k: int = 10, 
+        self,
+        query: str,
+        top_k: int = 10,
         threshold: Optional[float] = None
     ) -> List[Document]:
         """Search using vector similarity (semantic search).
@@ -139,20 +139,20 @@ class KnowledgeBase:
         if not self.enable_vector_search or not self.vector_engine:
             logger.warning("Vector search not available, falling back to keyword search")
             return self.search(query)
-        
+
         if not query.strip():
             return []
-        
+
         # Ensure vector index is built
         if self.vector_engine.index is None and self.documents:
             self._rebuild_vector_index()
-        
+
         results = self.vector_engine.search(query, top_k, threshold)
         return [doc for doc, score in results]
-    
+
     def search_hybrid(
-        self, 
-        query: str, 
+        self,
+        query: str,
         top_k: int = 10,
         vector_weight: float = 0.7,
         keyword_weight: float = 0.3
@@ -170,23 +170,23 @@ class KnowledgeBase:
         """
         if not query.strip():
             return []
-            
+
         if not self.enable_vector_search:
             return self.search(query)
-        
+
         # Get vector search results with scores
         vector_results = []
         if self.vector_engine and self.vector_engine.index is not None:
             vector_raw = self.vector_engine.search(query, top_k * 2)  # Get more for deduplication
             vector_results = [(doc, score * vector_weight) for doc, score in vector_raw]
-        
+
         # Get keyword search results (assign score based on position)
         keyword_docs = self.search(query)
         keyword_results = [
-            (doc, keyword_weight * (1.0 - i / len(keyword_docs))) 
+            (doc, keyword_weight * (1.0 - i / len(keyword_docs)))
             for i, doc in enumerate(keyword_docs[:top_k * 2])
         ]
-        
+
         # Combine and deduplicate
         doc_scores = {}
         for doc, score in vector_results + keyword_results:
@@ -195,11 +195,11 @@ class KnowledgeBase:
                 doc_scores[doc_id] = (doc, max(doc_scores[doc_id][1], score))
             else:
                 doc_scores[doc_id] = (doc, score)
-        
+
         # Sort by combined score and return top_k
         sorted_results = sorted(doc_scores.values(), key=lambda x: x[1], reverse=True)
         return [doc for doc, score in sorted_results[:top_k]]
-    
+
     def _generate_embedding(self, text: str):
         """Generate embedding for text (for testing purposes)."""
         if not self.enable_vector_search or not self.vector_engine:
@@ -210,25 +210,25 @@ class KnowledgeBase:
         """Enforce maximum document limit by removing oldest documents if needed."""
         if self.max_documents is None or len(self.documents) <= self.max_documents:
             return
-        
+
         # Calculate how many documents to remove
         excess_count = len(self.documents) - self.max_documents
-        
+
         # Remove oldest documents (FIFO eviction)
         removed_docs = self.documents[:excess_count]
         self.documents = self.documents[excess_count:]
-        
+
         # Log the eviction for monitoring
         logger.info(f"Evicted {excess_count} documents to enforce limit of {self.max_documents}")
-        
+
         # Update memory metrics
         self._update_memory_metrics()
-        
+
         # Rebuild search engine index after document eviction
         self.search_engine.clear()
         self.search_engine.add_documents(self.documents)
-        
-        # If vector search is enabled, we need to rebuild the index since we can't 
+
+        # If vector search is enabled, we need to rebuild the index since we can't
         # selectively remove documents from FAISS index
         if self.enable_vector_search and self.vector_engine and removed_docs:
             logger.debug("Rebuilding vector index after document eviction")
@@ -238,25 +238,25 @@ class KnowledgeBase:
         """Update memory usage metrics for monitoring."""
         if not METRICS_AVAILABLE or not get_global_metrics:
             return
-        
+
         try:
             metrics = get_global_metrics()
-            
+
             # Document count metrics
             metrics.set_gauge("kb_documents_count", len(self.documents))
             if self.max_documents:
                 metrics.set_gauge("kb_documents_limit", self.max_documents)
                 usage_percent = (len(self.documents) / self.max_documents) * 100
                 metrics.set_gauge("kb_documents_usage_percent", usage_percent)
-            
+
             # Estimate memory usage (rough approximation)
-            estimated_bytes = sum(len(doc.content.encode('utf-8')) + len(doc.source.encode('utf-8')) 
+            estimated_bytes = sum(len(doc.content.encode('utf-8')) + len(doc.source.encode('utf-8'))
                                 for doc in self.documents)
             metrics.set_gauge("kb_estimated_memory_bytes", estimated_bytes)
-            
+
             # Source count
             metrics.set_gauge("kb_sources_count", len(self.sources))
-            
+
         except Exception as e:
             # Don't let metrics collection crash the application
             logger.debug(f"Failed to update knowledge base metrics: {type(e).__name__}: {e}")
@@ -268,20 +268,20 @@ class KnowledgeBase:
             "sources_count": len(self.sources),
             "max_documents": self.max_documents,
         }
-        
+
         if self.max_documents:
             stats["documents_usage_percent"] = (len(self.documents) / self.max_documents) * 100
-        
+
         # Estimate memory usage
-        estimated_bytes = sum(len(doc.content.encode('utf-8')) + len(doc.source.encode('utf-8')) 
+        estimated_bytes = sum(len(doc.content.encode('utf-8')) + len(doc.source.encode('utf-8'))
                             for doc in self.documents)
         stats["estimated_memory_bytes"] = estimated_bytes
         stats["estimated_memory_mb"] = estimated_bytes / (1024 * 1024)
-        
+
         # Add search engine statistics
         search_stats = self.search_engine.get_stats()
         stats.update({f"search_{k}": v for k, v in search_stats.items()})
-        
+
         return stats
 
     # Persistence helpers -------------------------------------------------
@@ -291,7 +291,7 @@ class KnowledgeBase:
         return {"documents": [asdict(d) for d in self.documents]}
 
     @classmethod
-    def from_dict(cls, data: dict[str, list[dict]], max_documents: Optional[int] = None) -> "KnowledgeBase":
+    def from_dict(cls, data: dict[str, list[dict]], max_documents: Optional[int] = None) -> KnowledgeBase:
         """Create a knowledge base from a dictionary."""
         kb = cls(max_documents=max_documents)
         if not isinstance(data, dict):
@@ -307,7 +307,7 @@ class KnowledgeBase:
         Path(path).write_text(json.dumps(self.to_dict()), encoding="utf-8")
 
     @classmethod
-    def load(cls, path: str | Path, max_documents: Optional[int] = None) -> "KnowledgeBase":
+    def load(cls, path: str | Path, max_documents: Optional[int] = None) -> KnowledgeBase:
         """Load documents from ``path`` and return a new knowledge base."""
         try:
             text = Path(path).read_text(encoding="utf-8")

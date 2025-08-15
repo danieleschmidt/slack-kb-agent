@@ -1,14 +1,13 @@
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
-from datetime import datetime
 import hashlib
-import json
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
 
 class DocumentType(Enum):
     """Document type enumeration for categorization."""
-    
+
     TEXT = "text"
     CODE = "code"
     MARKDOWN = "markdown"
@@ -21,7 +20,7 @@ class DocumentType(Enum):
 
 class SourceType(Enum):
     """Source type enumeration for tracking data origins."""
-    
+
     GITHUB = "github"
     SLACK = "slack"
     FILE_SYSTEM = "file_system"
@@ -48,9 +47,15 @@ class Document:
     language: Optional[str] = None
     priority: int = 1  # 1=low, 5=high
     is_sensitive: bool = False
-    
+
     def __post_init__(self):
         """Initialize derived fields after creation."""
+        # Validate required fields
+        if not self.content:
+            raise TypeError("Document content is required")
+        if not self.source:
+            raise TypeError("Document source is required")
+
         if not self.title and self.content:
             # Extract title from first line or generate from content
             lines = self.content.strip().split('\n')
@@ -58,7 +63,7 @@ class Document:
                 self.title = lines[0].strip()[:100]  # First 100 chars as title
             else:
                 self.title = f"Document from {self.source}"
-    
+
     @property
     def doc_id(self) -> str:
         """Generate a unique document ID based on content and source."""
@@ -66,22 +71,22 @@ class Document:
             f"{self.content}{self.source}{self.created_at.isoformat()}".encode()
         ).hexdigest()
         return f"{self.source_type.value}_{content_hash[:16]}"
-    
+
     @property
     def content_hash(self) -> str:
         """Generate hash of content for deduplication."""
         return hashlib.sha256(self.content.encode()).hexdigest()
-    
+
     @property
     def word_count(self) -> int:
         """Calculate word count of the document content."""
         return len(self.content.split())
-    
+
     @property
     def char_count(self) -> int:
         """Calculate character count of the document content."""
         return len(self.content)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert document to dictionary for serialization."""
         return {
@@ -104,14 +109,14 @@ class Document:
             'char_count': self.char_count,
             'content_hash': self.content_hash
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Document':
         """Create document from dictionary."""
         # Handle datetime parsing
         created_at = datetime.fromisoformat(data['created_at']) if data.get('created_at') else datetime.utcnow()
         updated_at = datetime.fromisoformat(data['updated_at']) if data.get('updated_at') else None
-        
+
         return cls(
             content=data['content'],
             source=data['source'],
@@ -128,28 +133,51 @@ class Document:
             priority=data.get('priority', 1),
             is_sensitive=data.get('is_sensitive', False)
         )
-    
+
     def update_content(self, new_content: str, author: Optional[str] = None):
         """Update document content and metadata."""
         self.content = new_content
         self.updated_at = datetime.utcnow()
         if author:
             self.author = author
-    
+
     def add_tags(self, tags: List[str]):
         """Add tags to the document."""
         self.tags.extend([tag for tag in tags if tag not in self.tags])
-    
+
     def remove_tags(self, tags: List[str]):
         """Remove tags from the document."""
         self.tags = [tag for tag in self.tags if tag not in tags]
-    
+
     def mark_sensitive(self, is_sensitive: bool = True):
         """Mark document as sensitive or not."""
         self.is_sensitive = is_sensitive
         if is_sensitive and 'sensitive' not in self.tags:
             self.tags.append('sensitive')
-    
+
+    def __eq__(self, other) -> bool:
+        """Check equality based on content and source, ignoring timestamps."""
+        if not isinstance(other, Document):
+            return False
+        return (
+            self.content == other.content
+            and self.source == other.source
+            and self.doc_type == other.doc_type
+            and self.source_type == other.source_type
+            and self.author == other.author
+            and self.title == other.title
+            and self.url == other.url
+            and self.tags == other.tags
+            and self.language == other.language
+            and self.priority == other.priority
+            and self.is_sensitive == other.is_sensitive
+            and self.metadata == other.metadata
+        )
+
+    def __hash__(self) -> int:
+        """Generate hash for use in sets and dictionaries."""
+        return hash((self.content, self.source, self.doc_type.value, self.source_type.value))
+
     def extract_metadata_from_content(self):
         """Extract useful metadata from content automatically."""
         # Extract code language from content
@@ -157,28 +185,28 @@ class Document:
             first_line = self.content.split('\n')[0] if self.content else ""
             if first_line.startswith('```'):
                 self.language = first_line[3:].strip()
-        
+
         # Extract GitHub issue/PR metadata
         if self.source_type == SourceType.GITHUB:
             if '#' in self.source:
                 self.metadata['issue_number'] = self.source.split('#')[-1]
-        
+
         # Extract URL metadata
         if self.url:
             self.metadata['domain'] = self.url.split('/')[2] if '/' in self.url else self.url
 
 
-@dataclass 
+@dataclass
 class SearchResult:
     """Represents a search result with scoring and relevance information."""
-    
+
     document: Document
     score: float
     relevance_type: str = "keyword"  # "keyword", "semantic", "hybrid"
     matched_snippets: List[str] = field(default_factory=list)
     highlights: List[tuple] = field(default_factory=list)  # (start, end) positions
     explanation: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert search result to dictionary."""
         return {
@@ -194,7 +222,7 @@ class SearchResult:
 @dataclass
 class QueryContext:
     """Context information for query processing."""
-    
+
     user_id: str
     channel_id: Optional[str] = None
     timestamp: datetime = field(default_factory=datetime.utcnow)
@@ -202,7 +230,7 @@ class QueryContext:
     user_preferences: Dict[str, Any] = field(default_factory=dict)
     query_intent: Optional[str] = None
     entities: List[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert query context to dictionary."""
         return {
@@ -219,7 +247,7 @@ class QueryContext:
 @dataclass
 class AnalyticsEvent:
     """Analytics event for tracking usage and performance."""
-    
+
     event_type: str
     user_id: str
     timestamp: datetime = field(default_factory=datetime.utcnow)
@@ -229,7 +257,7 @@ class AnalyticsEvent:
     success: bool = True
     error_message: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert analytics event to dictionary."""
         return {
@@ -248,7 +276,7 @@ class AnalyticsEvent:
 @dataclass
 class KnowledgeBaseStats:
     """Statistics about the knowledge base state."""
-    
+
     total_documents: int = 0
     documents_by_type: Dict[str, int] = field(default_factory=dict)
     documents_by_source: Dict[str, int] = field(default_factory=dict)
@@ -258,7 +286,7 @@ class KnowledgeBaseStats:
     index_size_mb: float = 0.0
     most_recent_document: Optional[datetime] = None
     oldest_document: Optional[datetime] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert stats to dictionary."""
         return {

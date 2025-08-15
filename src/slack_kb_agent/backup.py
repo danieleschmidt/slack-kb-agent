@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
-import json
 import gzip
+import json
 import logging
-from typing import List, Dict, Any, Optional
-from pathlib import Path
-from datetime import datetime, timezone
 from dataclasses import asdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, Optional
 
+from .database import DatabaseRepository, get_database_repository, is_database_available
 from .models import Document
-from .database import get_database_repository, is_database_available, DatabaseRepository
 
 logger = logging.getLogger(__name__)
 
 
 class BackupManager:
     """Manages database backup and restore operations."""
-    
+
     def __init__(self, repository: Optional[DatabaseRepository] = None):
         """Initialize backup manager.
         
@@ -26,7 +26,7 @@ class BackupManager:
             repository: Database repository instance. If None, uses global instance.
         """
         self.repository = repository or get_database_repository()
-    
+
     def create_backup(self, backup_path: str | Path, compress: bool = True) -> Dict[str, Any]:
         """Create a backup of all documents.
         
@@ -43,14 +43,14 @@ class BackupManager:
         """
         if not is_database_available():
             raise RuntimeError("Database is not available for backup")
-        
+
         backup_path = Path(backup_path)
         timestamp = datetime.now(timezone.utc)
-        
+
         # Get all documents from database
         logger.info("Starting database backup...")
         documents = self.repository.get_all_documents()
-        
+
         # Create backup data structure
         backup_data = {
             "metadata": {
@@ -62,10 +62,10 @@ class BackupManager:
             },
             "documents": [asdict(doc) for doc in documents]
         }
-        
+
         # Serialize to JSON
         json_data = json.dumps(backup_data, indent=2, ensure_ascii=False)
-        
+
         # Write to file (compressed or uncompressed)
         if compress:
             backup_path = backup_path.with_suffix(backup_path.suffix + '.gz')
@@ -74,10 +74,10 @@ class BackupManager:
         else:
             with open(backup_path, 'w', encoding='utf-8') as f:
                 f.write(json_data)
-        
+
         # Get file size
         file_size = backup_path.stat().st_size
-        
+
         backup_metadata = {
             "backup_path": str(backup_path),
             "created_at": timestamp.isoformat(),
@@ -86,13 +86,13 @@ class BackupManager:
             "compressed": compress,
             "success": True
         }
-        
+
         logger.info(f"Backup completed: {len(documents)} documents, {file_size} bytes, {backup_path}")
         return backup_metadata
-    
+
     def restore_backup(
-        self, 
-        backup_path: str | Path, 
+        self,
+        backup_path: str | Path,
         clear_existing: bool = False,
         validate_only: bool = False
     ) -> Dict[str, Any]:
@@ -113,27 +113,27 @@ class BackupManager:
         """
         if not validate_only and not is_database_available():
             raise RuntimeError("Database is not available for restore")
-        
+
         backup_path = Path(backup_path)
         if not backup_path.exists():
             raise FileNotFoundError(f"Backup file not found: {backup_path}")
-        
+
         # Read backup file (handle both compressed and uncompressed)
         try:
             if backup_path.suffix.endswith('.gz'):
                 with gzip.open(backup_path, 'rt', encoding='utf-8') as f:
                     backup_data = json.load(f)
             else:
-                with open(backup_path, 'r', encoding='utf-8') as f:
+                with open(backup_path, encoding='utf-8') as f:
                     backup_data = json.load(f)
         except (json.JSONDecodeError, OSError) as e:
             raise ValueError(f"Invalid backup file: {e}")
-        
+
         # Validate backup structure
         validation_result = self._validate_backup_data(backup_data)
         if not validation_result["valid"]:
             raise ValueError(f"Invalid backup data: {validation_result['errors']}")
-        
+
         if validate_only:
             return {
                 "validation": validation_result,
@@ -141,7 +141,7 @@ class BackupManager:
                 "backup_metadata": backup_data.get("metadata", {}),
                 "validated_only": True
             }
-        
+
         # Convert backup documents to Document objects
         documents = []
         for doc_data in backup_data["documents"]:
@@ -150,7 +150,7 @@ class BackupManager:
                 content = doc_data.get("content", "")
                 source = doc_data.get("source", "unknown")
                 metadata = doc_data.get("metadata", {})
-                
+
                 documents.append(Document(
                     content=content,
                     source=source,
@@ -158,17 +158,17 @@ class BackupManager:
                 ))
             except Exception as e:
                 logger.warning(f"Skipping invalid document in backup: {e}")
-        
+
         # Clear existing documents if requested
         if clear_existing:
             logger.info("Clearing existing documents before restore...")
             cleared_count = self.repository.clear_all_documents()
             logger.info(f"Cleared {cleared_count} existing documents")
-        
+
         # Restore documents
         logger.info(f"Restoring {len(documents)} documents from backup...")
         restored_ids = self.repository.create_documents(documents)
-        
+
         restore_metadata = {
             "backup_path": str(backup_path),
             "restored_at": datetime.now(timezone.utc).isoformat(),
@@ -178,10 +178,10 @@ class BackupManager:
             "backup_metadata": backup_data.get("metadata", {}),
             "success": True
         }
-        
+
         logger.info(f"Restore completed: {len(restored_ids)} documents restored")
         return restore_metadata
-    
+
     def _validate_backup_data(self, backup_data: Dict[str, Any]) -> Dict[str, Any]:
         """Validate backup data structure.
         
@@ -193,12 +193,12 @@ class BackupManager:
         """
         errors = []
         warnings = []
-        
+
         # Check top-level structure
         if not isinstance(backup_data, dict):
             errors.append("Backup data must be a dictionary")
             return {"valid": False, "errors": errors, "warnings": warnings}
-        
+
         # Check metadata
         metadata = backup_data.get("metadata", {})
         if not isinstance(metadata, dict):
@@ -208,7 +208,7 @@ class BackupManager:
                 warnings.append("Missing backup creation timestamp")
             if "document_count" not in metadata:
                 warnings.append("Missing document count in metadata")
-        
+
         # Check documents
         documents = backup_data.get("documents", [])
         if not isinstance(documents, list):
@@ -219,20 +219,20 @@ class BackupManager:
                 if not isinstance(doc, dict):
                     errors.append(f"Document {i} is not a dictionary")
                     continue
-                
+
                 if "content" not in doc:
                     errors.append(f"Document {i} missing 'content' field")
                 if "source" not in doc:
                     warnings.append(f"Document {i} missing 'source' field")
                 if "metadata" in doc and not isinstance(doc["metadata"], dict):
                     warnings.append(f"Document {i} has invalid metadata field")
-        
+
         # Check document count consistency
         expected_count = metadata.get("document_count")
         actual_count = len(documents)
         if expected_count is not None and expected_count != actual_count:
             warnings.append(f"Document count mismatch: expected {expected_count}, found {actual_count}")
-        
+
         return {
             "valid": len(errors) == 0,
             "errors": errors,
@@ -240,7 +240,7 @@ class BackupManager:
             "document_count": len(documents),
             "metadata": metadata
         }
-    
+
     def list_backup_info(self, backup_path: str | Path) -> Dict[str, Any]:
         """Get information about a backup file without restoring it.
         
@@ -251,24 +251,24 @@ class BackupManager:
             Dict with backup information
         """
         backup_path = Path(backup_path)
-        
+
         if not backup_path.exists():
             raise FileNotFoundError(f"Backup file not found: {backup_path}")
-        
+
         # Get file stats
         file_stats = backup_path.stat()
-        
+
         try:
             # Read and validate backup
             if backup_path.suffix.endswith('.gz'):
                 with gzip.open(backup_path, 'rt', encoding='utf-8') as f:
                     backup_data = json.load(f)
             else:
-                with open(backup_path, 'r', encoding='utf-8') as f:
+                with open(backup_path, encoding='utf-8') as f:
                     backup_data = json.load(f)
-            
+
             validation_result = self._validate_backup_data(backup_data)
-            
+
             return {
                 "file_path": str(backup_path),
                 "file_size_bytes": file_stats.st_size,
@@ -279,7 +279,7 @@ class BackupManager:
                 "validation": validation_result,
                 "readable": True
             }
-        
+
         except Exception as e:
             return {
                 "file_path": str(backup_path),
@@ -299,7 +299,7 @@ def create_backup(backup_path: str | Path, compress: bool = True) -> Dict[str, A
 
 
 def restore_backup(
-    backup_path: str | Path, 
+    backup_path: str | Path,
     clear_existing: bool = False,
     validate_only: bool = False
 ) -> Dict[str, Any]:

@@ -12,4 +12,4 @@ def test_edge_case_null_input():
 def test_version_constant():
     from slack_kb_agent import __version__
 
-    assert __version__ == "1.2.0"
+    assert __version__ == "1.7.2"

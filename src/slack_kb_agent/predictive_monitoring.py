@@ -8,25 +8,25 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 import logging
-import numpy as np
-from collections import defaultdict, deque
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Tuple, Callable
-from datetime import datetime, timedelta
 import threading
-from pathlib import Path
+import time
 import warnings
+from collections import defaultdict, deque
+from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
+
+import numpy as np
 
 # Suppress numpy warnings for cleaner output
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 
-from .monitoring import get_global_metrics, StructuredLogger
-from .cache import get_cache_manager
-from .resilience import get_circuit_breaker, get_health_monitor
 from .adaptive_learning_engine import get_adaptive_learning_engine
+from .cache import get_cache_manager
+from .monitoring import StructuredLogger, get_global_metrics
+from .resilience import get_circuit_breaker
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class AlertSeverity(Enum):
     MEDIUM = ("medium", 0.6)
     LOW = ("low", 0.4)
     INFO = ("info", 0.2)
-    
+
     def __init__(self, name: str, weight: float):
         self.severity_name = name
         self.weight = weight
@@ -68,7 +68,7 @@ class Anomaly:
     metrics: Dict[str, float]
     predicted_impact: Dict[str, float]
     recommended_actions: List[Dict[str, Any]]
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'anomaly_id': self.anomaly_id,
@@ -99,18 +99,18 @@ class HealthPrediction:
 
 class PredictiveMonitoring:
     """Advanced monitoring with predictive analytics and self-healing."""
-    
+
     def __init__(self, prediction_window_hours: int = 24):
         self.prediction_window_hours = prediction_window_hours
         self.logger = StructuredLogger("predictive_monitoring")
         self.cache = get_cache_manager()
         self.learning_engine = get_adaptive_learning_engine()
-        
+
         # Monitoring data storage
         self.metrics_history: Dict[str, deque] = defaultdict(lambda: deque(maxlen=10000))
         self.anomalies: Dict[str, Anomaly] = {}
         self.health_predictions: Dict[str, HealthPrediction] = {}
-        
+
         # Anomaly detection models (simplified)
         self.baseline_metrics: Dict[str, float] = {}
         self.metric_thresholds: Dict[str, Dict[str, float]] = {
@@ -120,7 +120,7 @@ class PredictiveMonitoring:
             'cpu_usage': {'warning': 0.7, 'critical': 0.85},      # 70%, 85%
             'disk_usage': {'warning': 0.8, 'critical': 0.9}       # 80%, 90%
         }
-        
+
         # Self-healing actions
         self.healing_actions: Dict[str, Callable] = {
             'restart_service': self._restart_service_action,
@@ -129,30 +129,30 @@ class PredictiveMonitoring:
             'circuit_breaker_open': self._circuit_breaker_action,
             'reduce_load': self._reduce_load_action
         }
-        
+
         # Monitoring configuration
         self.monitoring_interval = 60  # seconds
         self.anomaly_detection_enabled = True
         self.self_healing_enabled = True
-        
+
         # Thread safety
         self._monitoring_lock = threading.Lock()
-        
+
         logger.info(f"Predictive Monitoring initialized with {prediction_window_hours}h prediction window")
-    
+
     async def start_monitoring(self) -> None:
         """Start the continuous monitoring process."""
         self.logger.info("Starting predictive monitoring")
-        
+
         monitoring_tasks = [
             self._continuous_metrics_collection(),
             self._continuous_anomaly_detection(),
             self._continuous_health_prediction(),
             self._continuous_self_healing()
         ]
-        
+
         await asyncio.gather(*monitoring_tasks, return_exceptions=True)
-    
+
     async def _continuous_metrics_collection(self) -> None:
         """Continuously collect system metrics."""
         while True:
@@ -160,11 +160,11 @@ class PredictiveMonitoring:
                 metrics = await self._collect_system_metrics()
                 await self._store_metrics(metrics)
                 await asyncio.sleep(self.monitoring_interval)
-                
+
             except Exception as e:
                 logger.error(f"Error in metrics collection: {e}")
                 await asyncio.sleep(5)  # Brief pause on error
-    
+
     async def _continuous_anomaly_detection(self) -> None:
         """Continuously detect anomalies in system behavior."""
         while True:
@@ -173,50 +173,50 @@ class PredictiveMonitoring:
                     anomalies = await self._detect_anomalies()
                     for anomaly in anomalies:
                         await self._handle_anomaly(anomaly)
-                
+
                 await asyncio.sleep(self.monitoring_interval)
-                
+
             except Exception as e:
                 logger.error(f"Error in anomaly detection: {e}")
                 await asyncio.sleep(10)
-    
+
     async def _continuous_health_prediction(self) -> None:
         """Continuously predict system health."""
         while True:
             try:
                 predictions = await self._predict_system_health()
                 self.health_predictions.update(predictions)
-                
+
                 # Log predictions for critical components
                 for component, prediction in predictions.items():
                     if prediction.predicted_health_24h < 0.5:
                         self.logger.warning(f"Health prediction for {component}: {prediction.predicted_health_24h:.2f}")
-                
+
                 await asyncio.sleep(300)  # Update predictions every 5 minutes
-                
+
             except Exception as e:
                 logger.error(f"Error in health prediction: {e}")
                 await asyncio.sleep(30)
-    
+
     async def _continuous_self_healing(self) -> None:
         """Continuously perform self-healing actions."""
         while True:
             try:
                 if self.self_healing_enabled:
                     await self._execute_self_healing_actions()
-                
+
                 await asyncio.sleep(30)  # Check for healing opportunities frequently
-                
+
             except Exception as e:
                 logger.error(f"Error in self-healing: {e}")
                 await asyncio.sleep(15)
-    
+
     async def _collect_system_metrics(self) -> Dict[str, float]:
         """Collect comprehensive system metrics."""
         try:
             # Get metrics from global metrics collector
             global_metrics = get_global_metrics()
-            
+
             # Simulate additional metrics collection
             current_time = time.time()
             metrics = {
@@ -231,25 +231,25 @@ class PredictiveMonitoring:
                 'query_volume': max(0, int(np.random.normal(100, 25))),  # Queries per minute
                 'data_quality_score': min(1.0, max(0, np.random.normal(0.95, 0.05)))  # Data quality
             }
-            
+
             return metrics
-            
+
         except Exception as e:
             logger.error(f"Error collecting system metrics: {e}")
             return {'timestamp': time.time(), 'error': str(e)}
-    
+
     async def _store_metrics(self, metrics: Dict[str, float]) -> None:
         """Store metrics in historical data structure."""
         with self._monitoring_lock:
             timestamp = metrics.pop('timestamp', time.time())
-            
+
             for metric_name, value in metrics.items():
                 if isinstance(value, (int, float)) and not np.isnan(value):
                     self.metrics_history[metric_name].append({
                         'timestamp': timestamp,
                         'value': value
                     })
-                    
+
                     # Update baseline metrics
                     if metric_name in self.baseline_metrics:
                         alpha = 0.05  # Smoothing factor
@@ -258,49 +258,49 @@ class PredictiveMonitoring:
                         )
                     else:
                         self.baseline_metrics[metric_name] = value
-    
+
     async def _detect_anomalies(self) -> List[Anomaly]:
         """Detect anomalies in system metrics using multiple techniques."""
         anomalies = []
-        
+
         try:
             # Statistical anomaly detection
             statistical_anomalies = await self._detect_statistical_anomalies()
             anomalies.extend(statistical_anomalies)
-            
+
             # Threshold-based anomaly detection
             threshold_anomalies = await self._detect_threshold_anomalies()
             anomalies.extend(threshold_anomalies)
-            
+
             # Pattern-based anomaly detection
             pattern_anomalies = await self._detect_pattern_anomalies()
             anomalies.extend(pattern_anomalies)
-            
+
         except Exception as e:
             logger.error(f"Error in anomaly detection: {e}")
-        
+
         return anomalies
-    
+
     async def _detect_statistical_anomalies(self) -> List[Anomaly]:
         """Detect statistical anomalies using Z-score and other methods."""
         anomalies = []
-        
+
         for metric_name, history in self.metrics_history.items():
             if len(history) < 10:  # Need sufficient data
                 continue
-            
+
             try:
                 # Get recent values
                 recent_values = [entry['value'] for entry in list(history)[-100:]]
                 current_value = recent_values[-1]
-                
+
                 # Calculate Z-score
                 mean_value = np.mean(recent_values[:-10])  # Baseline excluding recent values
                 std_value = np.std(recent_values[:-10])
-                
+
                 if std_value > 0:
                     z_score = abs((current_value - mean_value) / std_value)
-                    
+
                     if z_score > 3.0:  # Strong anomaly
                         anomaly = Anomaly(
                             anomaly_id=f"statistical_{metric_name}_{int(time.time())}",
@@ -315,27 +315,27 @@ class PredictiveMonitoring:
                             recommended_actions=await self._get_anomaly_recommendations(metric_name)
                         )
                         anomalies.append(anomaly)
-                        
+
             except Exception as e:
                 logger.error(f"Error in statistical anomaly detection for {metric_name}: {e}")
-        
+
         return anomalies
-    
+
     async def _detect_threshold_anomalies(self) -> List[Anomaly]:
         """Detect anomalies based on predefined thresholds."""
         anomalies = []
-        
+
         for metric_name, thresholds in self.metric_thresholds.items():
             if metric_name not in self.metrics_history:
                 continue
-            
+
             try:
                 history = self.metrics_history[metric_name]
                 if not history:
                     continue
-                
+
                 current_value = history[-1]['value']
-                
+
                 # Check critical threshold
                 if current_value > thresholds.get('critical', float('inf')):
                     anomaly = Anomaly(
@@ -351,7 +351,7 @@ class PredictiveMonitoring:
                         recommended_actions=await self._get_anomaly_recommendations(metric_name)
                     )
                     anomalies.append(anomaly)
-                    
+
                 # Check warning threshold
                 elif current_value > thresholds.get('warning', float('inf')):
                     anomaly = Anomaly(
@@ -367,29 +367,29 @@ class PredictiveMonitoring:
                         recommended_actions=await self._get_anomaly_recommendations(metric_name)
                     )
                     anomalies.append(anomaly)
-                    
+
             except Exception as e:
                 logger.error(f"Error in threshold anomaly detection for {metric_name}: {e}")
-        
+
         return anomalies
-    
+
     async def _detect_pattern_anomalies(self) -> List[Anomaly]:
         """Detect anomalies in patterns and trends."""
         anomalies = []
-        
+
         try:
             # Detect unusual trends
             for metric_name, history in self.metrics_history.items():
                 if len(history) < 20:  # Need sufficient data for trend analysis
                     continue
-                
+
                 # Get recent trend
                 recent_values = [entry['value'] for entry in list(history)[-20:]]
-                
+
                 # Simple trend detection using linear regression
                 x = np.arange(len(recent_values))
                 slope = np.polyfit(x, recent_values, 1)[0]
-                
+
                 # Detect rapid degradation
                 if metric_name in ['response_time', 'error_rate', 'memory_usage'] and slope > 0.1:
                     anomaly = Anomaly(
@@ -405,12 +405,12 @@ class PredictiveMonitoring:
                         recommended_actions=[{'action': 'investigate_trend', 'priority': 'high'}]
                     )
                     anomalies.append(anomaly)
-                    
+
         except Exception as e:
             logger.error(f"Error in pattern anomaly detection: {e}")
-        
+
         return anomalies
-    
+
     def _classify_anomaly_type(self, metric_name: str, value: float) -> AnomalyType:
         """Classify the type of anomaly based on metric and value."""
         if metric_name in ['response_time'] and value > 1000:
@@ -423,7 +423,7 @@ class PredictiveMonitoring:
             return AnomalyType.UNUSUAL_TRAFFIC
         else:
             return AnomalyType.SERVICE_DISRUPTION
-    
+
     async def _predict_anomaly_impact(self, metric_name: str, value: float) -> Dict[str, float]:
         """Predict the impact of an anomaly."""
         impact = {
@@ -431,7 +431,7 @@ class PredictiveMonitoring:
             'system_stability': 0.5,
             'performance_degradation': 0.5
         }
-        
+
         if metric_name == 'response_time':
             impact['user_experience'] = min(1.0, value / 2000.0)
             impact['performance_degradation'] = min(1.0, value / 1500.0)
@@ -441,13 +441,13 @@ class PredictiveMonitoring:
         elif metric_name in ['memory_usage', 'cpu_usage']:
             impact['system_stability'] = min(1.0, value)
             impact['performance_degradation'] = min(1.0, value * 1.2)
-        
+
         return impact
-    
+
     async def _get_anomaly_recommendations(self, metric_name: str) -> List[Dict[str, Any]]:
         """Get recommendations for handling specific anomalies."""
         recommendations = []
-        
+
         if metric_name == 'response_time':
             recommendations.extend([
                 {'action': 'enable_aggressive_caching', 'priority': 'high'},
@@ -466,21 +466,21 @@ class PredictiveMonitoring:
                 {'action': 'circuit_breaker_open', 'priority': 'high'},
                 {'action': 'rollback_recent_changes', 'priority': 'medium'}
             ])
-        
+
         return recommendations
-    
+
     async def _predict_system_health(self) -> Dict[str, HealthPrediction]:
         """Predict system health for various components."""
         predictions = {}
-        
+
         components = ['api_service', 'database', 'cache', 'search_engine', 'monitoring']
-        
+
         for component in components:
             try:
                 current_health = await self._calculate_current_health(component)
                 health_1h = await self._predict_health(component, hours=1)
                 health_24h = await self._predict_health(component, hours=24)
-                
+
                 predictions[component] = HealthPrediction(
                     component=component,
                     current_health=current_health,
@@ -491,12 +491,12 @@ class PredictiveMonitoring:
                     recommendations=await self._get_health_recommendations(component, health_24h),
                     predicted_at=datetime.now()
                 )
-                
+
             except Exception as e:
                 logger.error(f"Error predicting health for {component}: {e}")
-        
+
         return predictions
-    
+
     async def _calculate_current_health(self, component: str) -> float:
         """Calculate current health score for a component."""
         # Simplified health calculation based on relevant metrics
@@ -507,14 +507,14 @@ class PredictiveMonitoring:
             'search_engine': ['response_time', 'data_quality_score'],
             'monitoring': ['cpu_usage', 'memory_usage']
         }
-        
+
         factors = health_factors.get(component, ['cpu_usage', 'memory_usage'])
         health_scores = []
-        
+
         for factor in factors:
             if factor in self.metrics_history and self.metrics_history[factor]:
                 current_value = self.metrics_history[factor][-1]['value']
-                
+
                 # Convert metric to health score (0-1, higher is better)
                 if factor in ['response_time', 'error_rate', 'cpu_usage', 'memory_usage']:
                     # Lower is better for these metrics
@@ -523,38 +523,38 @@ class PredictiveMonitoring:
                 else:
                     # Higher is better for these metrics
                     health_score = min(1.0, current_value)
-                
+
                 health_scores.append(health_score)
-        
+
         return sum(health_scores) / len(health_scores) if health_scores else 0.5
-    
+
     async def _predict_health(self, component: str, hours: int) -> float:
         """Predict future health of a component."""
         current_health = await self._calculate_current_health(component)
-        
+
         # Simple prediction based on trends (in production, use ML models)
         trend_factor = np.random.normal(0, 0.1)  # Random trend simulation
         predicted_health = max(0, min(1.0, current_health + trend_factor))
-        
+
         return predicted_health
-    
+
     async def _identify_risk_factors(self, component: str) -> List[str]:
         """Identify risk factors for a component."""
         risk_factors = []
-        
+
         # Check for trending issues
         for metric_name in ['response_time', 'error_rate', 'memory_usage']:
             if metric_name in self.metrics_history and len(self.metrics_history[metric_name]) > 5:
                 recent_values = [entry['value'] for entry in list(self.metrics_history[metric_name])[-5:]]
                 if len(recent_values) >= 2 and recent_values[-1] > recent_values[0] * 1.2:
                     risk_factors.append(f"Increasing {metric_name}")
-        
+
         return risk_factors
-    
+
     async def _get_health_recommendations(self, component: str, predicted_health: float) -> List[str]:
         """Get health recommendations for a component."""
         recommendations = []
-        
+
         if predicted_health < 0.3:
             recommendations.extend([
                 f"Immediate attention required for {component}",
@@ -567,18 +567,18 @@ class PredictiveMonitoring:
                 "Schedule preventive maintenance",
                 "Review recent changes"
             ])
-        
+
         return recommendations
-    
+
     async def _handle_anomaly(self, anomaly: Anomaly) -> None:
         """Handle a detected anomaly."""
         try:
             # Store the anomaly
             self.anomalies[anomaly.anomaly_id] = anomaly
-            
+
             # Log the anomaly
             self.logger.warning(f"Anomaly detected: {anomaly.description}")
-            
+
             # Learn from the anomaly
             await self.learning_engine.learn_from_errors(
                 anomaly.anomaly_type.value,
@@ -589,14 +589,14 @@ class PredictiveMonitoring:
                 },
                 recovery_success=False  # Will be updated if recovery succeeds
             )
-            
+
             # Execute recommended actions if self-healing is enabled
             if self.self_healing_enabled and anomaly.severity.weight > 0.6:
                 await self._execute_anomaly_actions(anomaly)
-            
+
         except Exception as e:
             logger.error(f"Error handling anomaly {anomaly.anomaly_id}: {e}")
-    
+
     async def _execute_anomaly_actions(self, anomaly: Anomaly) -> None:
         """Execute recommended actions for an anomaly."""
         for action in anomaly.recommended_actions:
@@ -605,7 +605,7 @@ class PredictiveMonitoring:
                 if action_name in self.healing_actions:
                     self.logger.info(f"Executing healing action: {action_name}")
                     success = await self.healing_actions[action_name](anomaly)
-                    
+
                     if success:
                         self.logger.info(f"Successfully executed {action_name}")
                         # Update learning engine with successful recovery
@@ -616,10 +616,10 @@ class PredictiveMonitoring:
                         )
                     else:
                         self.logger.warning(f"Failed to execute {action_name}")
-                        
+
             except Exception as e:
                 logger.error(f"Error executing action {action.get('action')}: {e}")
-    
+
     async def _execute_self_healing_actions(self) -> None:
         """Execute proactive self-healing actions based on predictions."""
         try:
@@ -627,16 +627,16 @@ class PredictiveMonitoring:
             for component, prediction in self.health_predictions.items():
                 if prediction.predicted_health_24h < 0.4:
                     self.logger.info(f"Proactive healing for {component} (predicted health: {prediction.predicted_health_24h:.2f})")
-                    
+
                     # Execute preventive actions
                     if component == 'cache' and 'clear_cache' in self.healing_actions:
                         await self.healing_actions['clear_cache'](None)
                     elif 'memory_usage' in prediction.risk_factors and 'restart_service' in self.healing_actions:
                         await self.healing_actions['restart_service'](None)
-            
+
         except Exception as e:
             logger.error(f"Error in proactive self-healing: {e}")
-    
+
     # Self-healing action implementations
     async def _restart_service_action(self, anomaly: Optional[Anomaly]) -> bool:
         """Simulate service restart action."""
@@ -648,7 +648,7 @@ class PredictiveMonitoring:
         except Exception as e:
             logger.error(f"Error in restart service action: {e}")
             return False
-    
+
     async def _clear_cache_action(self, anomaly: Optional[Anomaly]) -> bool:
         """Clear cache action for memory pressure relief."""
         try:
@@ -660,7 +660,7 @@ class PredictiveMonitoring:
         except Exception as e:
             logger.error(f"Error in clear cache action: {e}")
             return False
-    
+
     async def _scale_resources_action(self, anomaly: Optional[Anomaly]) -> bool:
         """Simulate resource scaling action."""
         try:
@@ -671,7 +671,7 @@ class PredictiveMonitoring:
         except Exception as e:
             logger.error(f"Error in scale resources action: {e}")
             return False
-    
+
     async def _circuit_breaker_action(self, anomaly: Optional[Anomaly]) -> bool:
         """Open circuit breaker to prevent cascading failures."""
         try:
@@ -683,7 +683,7 @@ class PredictiveMonitoring:
         except Exception as e:
             logger.error(f"Error in circuit breaker action: {e}")
             return False
-    
+
     async def _reduce_load_action(self, anomaly: Optional[Anomaly]) -> bool:
         """Simulate load reduction action."""
         try:
@@ -694,7 +694,7 @@ class PredictiveMonitoring:
         except Exception as e:
             logger.error(f"Error in reduce load action: {e}")
             return False
-    
+
     def get_monitoring_status(self) -> Dict[str, Any]:
         """Get current monitoring system status."""
         return {
@@ -709,26 +709,26 @@ class PredictiveMonitoring:
             'prediction_window_hours': self.prediction_window_hours,
             'last_update': datetime.now().isoformat()
         }
-    
+
     def get_anomaly_report(self) -> Dict[str, Any]:
         """Get comprehensive anomaly report."""
         return {
             'total_anomalies': len(self.anomalies),
             'anomalies_by_severity': {
                 severity.severity_name: len([
-                    a for a in self.anomalies.values() 
+                    a for a in self.anomalies.values()
                     if a.severity == severity
                 ]) for severity in AlertSeverity
             },
             'anomalies_by_type': {
                 anomaly_type.value: len([
-                    a for a in self.anomalies.values() 
+                    a for a in self.anomalies.values()
                     if a.anomaly_type == anomaly_type
                 ]) for anomaly_type in AnomalyType
             },
             'recent_anomalies': [
-                anomaly.to_dict() for anomaly in 
-                sorted(self.anomalies.values(), 
+                anomaly.to_dict() for anomaly in
+                sorted(self.anomalies.values(),
                       key=lambda x: x.detected_at, reverse=True)[:5]
             ],
             'report_generated': datetime.now().isoformat()
@@ -750,23 +750,23 @@ def get_predictive_monitoring(prediction_window_hours: int = 24) -> PredictiveMo
 async def demonstrate_predictive_monitoring() -> Dict[str, Any]:
     """Demonstrate predictive monitoring capabilities."""
     monitoring = get_predictive_monitoring()
-    
+
     # Collect some sample metrics
     for _ in range(5):
         metrics = await monitoring._collect_system_metrics()
         await monitoring._store_metrics(metrics)
         await asyncio.sleep(0.1)
-    
+
     # Detect anomalies
     anomalies = await monitoring._detect_anomalies()
-    
+
     # Get health predictions
     health_predictions = await monitoring._predict_system_health()
-    
+
     # Get status reports
     status = monitoring.get_monitoring_status()
     anomaly_report = monitoring.get_anomaly_report()
-    
+
     return {
         'monitoring_status': status,
         'detected_anomalies': len(anomalies),
@@ -787,5 +787,5 @@ if __name__ == "__main__":
     async def main():
         results = await demonstrate_predictive_monitoring()
         print(json.dumps(results, indent=2, default=str))
-    
+
     asyncio.run(main())

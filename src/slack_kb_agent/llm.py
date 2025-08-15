@@ -6,18 +6,21 @@ Provides OpenAI/Claude integration for generating contextual responses
 based on knowledge base search results.
 """
 
-import os
 import logging
+import os
 import re
 import time
-from typing import Dict, List, Optional, NamedTuple, Any
-from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Dict, List, NamedTuple, Optional
 
-from .models import Document
-from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitOpenError, CircuitState
+from .circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitOpenError,
+)
 from .constants import CircuitBreakerDefaults
-
+from .models import Document
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -47,26 +50,26 @@ class LLMConfig:
     timeout: int = 30  # API request timeout
     retry_attempts: int = 3
     retry_delay: float = 1.0
-    
+
     @classmethod
     def from_env(cls) -> 'LLMConfig':
         """Create LLMConfig from environment variables."""
         # Check for API key to determine if LLM should be enabled
         openai_key = os.getenv("OPENAI_API_KEY")
         anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-        
+
         # Default to disabled if no API keys are available
         has_api_key = bool(openai_key or anthropic_key)
         enabled = os.getenv("LLM_ENABLED", "true" if has_api_key else "false").lower() == "true"
-        
+
         if enabled and not has_api_key:
             logger.warning("LLM enabled but no API keys found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY")
             enabled = False
-        
+
         # Determine provider and API key
         provider = os.getenv("LLM_PROVIDER", "openai")
         api_key = openai_key if provider == "openai" else anthropic_key
-        
+
         return cls(
             enabled=enabled,
             provider=provider,
@@ -84,21 +87,21 @@ class LLMConfig:
 
 class PromptTemplate:
     """Template system for LLM prompts."""
-    
+
     def __init__(self, name: str, template: str, required_variables: List[str]):
         self.name = name
         self.template = template
         self.required_variables = required_variables
-    
+
     def format(self, **kwargs) -> str:
         """Format template with provided variables."""
         # Check for required variables
         missing = [var for var in self.required_variables if var not in kwargs]
         if missing:
             raise ValueError(f"Missing required variables: {missing}")
-        
+
         return self.template.format(**kwargs)
-    
+
     @classmethod
     def get_system_prompt(cls) -> 'PromptTemplate':
         """Get system prompt template."""
@@ -120,7 +123,7 @@ Guidelines:
 Remember: You only know what's in the provided context. Don't make up information.""",
             required_variables=["bot_name", "capabilities"]
         )
-    
+
     @classmethod
     def get_qa_prompt(cls) -> 'PromptTemplate':
         """Get question-answering prompt template."""
@@ -136,7 +139,7 @@ Context:
 Please provide a helpful and accurate answer. If the context doesn't contain enough information to answer the question completely, mention what information is missing.""",
             required_variables=["query", "context"]
         )
-    
+
     @classmethod
     def get_no_context_prompt(cls) -> 'PromptTemplate':
         """Get prompt for when no context is available."""
@@ -157,15 +160,15 @@ Is there anything else I can help you with?""",
 
 class LLMProvider(ABC):
     """Abstract base class for LLM providers."""
-    
+
     def __init__(self, config: LLMConfig):
         self.config = config
-    
+
     @abstractmethod
     def generate_response(self, prompt: str, system_prompt: Optional[str] = None) -> LLMResponse:
         """Generate response from the LLM."""
         pass
-    
+
     @staticmethod
     def create(config: LLMConfig) -> 'LLMProvider':
         """Factory method to create appropriate provider."""
@@ -179,38 +182,38 @@ class LLMProvider(ABC):
 
 class OpenAIProvider(LLMProvider):
     """OpenAI API provider."""
-    
+
     def __init__(self, config: LLMConfig):
         super().__init__(config)
         self._import_openai()
-    
+
     def _import_openai(self):
         """Import OpenAI with proper error handling."""
         try:
             import openai
             self.openai = openai
-            
+
             # Configure API key and base
             if self.config.api_key:
                 openai.api_key = self.config.api_key
             if self.config.api_base:
                 openai.api_base = self.config.api_base
-                
+
         except ImportError:
             raise ImportError(
                 "OpenAI package not found. Install with: pip install openai"
             )
-    
+
     def generate_response(self, prompt: str, system_prompt: Optional[str] = None) -> LLMResponse:
         """Generate response using OpenAI API."""
         start_time = time.time()
-        
+
         try:
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
-            
+
             response = self.openai.ChatCompletion.create(
                 model=self.config.model,
                 messages=messages,
@@ -218,12 +221,12 @@ class OpenAIProvider(LLMProvider):
                 temperature=self.config.temperature,
                 timeout=self.config.timeout
             )
-            
+
             response_time = time.time() - start_time
-            
+
             content = response.choices[0].message.content
             usage = response.get('usage', {})
-            
+
             return LLMResponse(
                 content=content,
                 success=True,
@@ -234,7 +237,7 @@ class OpenAIProvider(LLMProvider):
                 },
                 response_time=response_time
             )
-            
+
         except (ConnectionError, TimeoutError) as e:
             response_time = time.time() - start_time
             logger.error(f"OpenAI API connection/timeout error: {e}")
@@ -266,11 +269,11 @@ class OpenAIProvider(LLMProvider):
 
 class AnthropicProvider(LLMProvider):
     """Anthropic Claude API provider."""
-    
+
     def __init__(self, config: LLMConfig):
         super().__init__(config)
         self._import_anthropic()
-    
+
     def _import_anthropic(self):
         """Import Anthropic with proper error handling."""
         try:
@@ -281,30 +284,30 @@ class AnthropicProvider(LLMProvider):
             raise ImportError(
                 "Anthropic package not found. Install with: pip install anthropic"
             )
-    
+
     def generate_response(self, prompt: str, system_prompt: Optional[str] = None) -> LLMResponse:
         """Generate response using Anthropic Claude API."""
         start_time = time.time()
-        
+
         try:
             # Combine system prompt with user prompt for Claude
             full_prompt = ""
             if system_prompt:
                 full_prompt += f"System: {system_prompt}\n\n"
             full_prompt += f"Human: {prompt}\n\nAssistant:"
-            
+
             response = self.client.messages.create(
                 model=self.config.model,
                 max_tokens=self.config.max_tokens,
                 temperature=self.config.temperature,
                 messages=[{"role": "user", "content": full_prompt}]
             )
-            
+
             response_time = time.time() - start_time
-            
+
             content = response.content[0].text
             usage = response.usage
-            
+
             return LLMResponse(
                 content=content,
                 success=True,
@@ -315,7 +318,7 @@ class AnthropicProvider(LLMProvider):
                 },
                 response_time=response_time
             )
-            
+
         except (ConnectionError, TimeoutError) as e:
             response_time = time.time() - start_time
             logger.error(f"Anthropic API connection/timeout error: {e}")
@@ -347,12 +350,12 @@ class AnthropicProvider(LLMProvider):
 
 class ResponseGenerator:
     """Main class for generating intelligent responses."""
-    
+
     def __init__(self, config: Optional[LLMConfig] = None):
         self.config = config or LLMConfig.from_env()
         self.provider = None
         self.circuit_breaker = None
-        
+
         if self.config.enabled:
             try:
                 self.provider = LLMProvider.create(self.config)
@@ -370,7 +373,7 @@ class ResponseGenerator:
                 self.config.enabled = False
         else:
             logger.info("LLM integration disabled")
-    
+
     def _get_circuit_breaker(self) -> CircuitBreaker:
         """Get or create circuit breaker for LLM operations."""
         circuit_config = CircuitBreakerConfig(
@@ -381,28 +384,28 @@ class ResponseGenerator:
             service_name=f"llm_provider_{self.config.provider}"
         )
         return CircuitBreaker(circuit_config)
-    
-    def generate_response(self, 
-                         query: str, 
+
+    def generate_response(self,
+                         query: str,
                          context_documents: List[Document],
                          user_id: Optional[str] = None) -> LLMResponse:
         """Generate intelligent response based on query and context."""
-        
+
         if not self.config.enabled or not self.provider:
             return LLMResponse(
                 content="",
                 success=False,
                 error_message="LLM integration is disabled or not available"
             )
-        
+
         # Check circuit breaker state first
         if self.circuit_breaker:
             try:
                 # Use circuit breaker to protect the call
                 return self.circuit_breaker.call(
-                    self._generate_response_protected, 
-                    query, 
-                    context_documents, 
+                    self._generate_response_protected,
+                    query,
+                    context_documents,
                     user_id
                 )
             except CircuitOpenError as e:
@@ -431,19 +434,19 @@ class ResponseGenerator:
                     success=False,
                     error_message=f"LLM generation failed: {e}"
                 )
-    
-    def _generate_response_protected(self, 
-                                   query: str, 
+
+    def _generate_response_protected(self,
+                                   query: str,
                                    context_documents: List[Document],
                                    user_id: Optional[str] = None) -> LLMResponse:
         """Internal method to generate response with error handling."""
         try:
             # Sanitize query to prevent prompt injection
             sanitized_query = self._sanitize_query(query)
-            
+
             # Prepare context from documents
             context = self._prepare_context(context_documents)
-            
+
             # Choose appropriate prompt template
             if context.strip():
                 template = PromptTemplate.get_qa_prompt()
@@ -451,36 +454,36 @@ class ResponseGenerator:
             else:
                 template = PromptTemplate.get_no_context_prompt()
                 prompt = template.format(query=sanitized_query)
-            
+
             # Generate system prompt
             system_template = PromptTemplate.get_system_prompt()
             system_prompt = system_template.format(
                 bot_name="Slack KB Agent",
                 capabilities="search knowledge base, answer technical questions, provide code examples"
             )
-            
+
             # Generate response with retry logic
             for attempt in range(self.config.retry_attempts):
                 try:
                     response = self.provider.generate_response(prompt, system_prompt)
-                    
+
                     if response.success:
                         # Log successful generation
                         logger.info(f"Generated response for user {user_id}: {len(response.content)} chars, "
                                   f"{response.token_usage.get('total', 0) if response.token_usage else 0} tokens")
                         return response
-                    
+
                     # Log failed attempt
                     logger.warning(f"LLM generation attempt {attempt + 1} failed: {response.error_message}")
-                    
+
                     # If this was the last attempt, raise exception for circuit breaker
                     if attempt == self.config.retry_attempts - 1:
                         # Circuit breaker should count this as failure
                         raise RuntimeError(f"LLM generation failed after {self.config.retry_attempts} attempts: {response.error_message}")
-                    
+
                     # Wait before retry
                     time.sleep(self.config.retry_delay * (attempt + 1))
-                    
+
                 except (ValueError, TypeError, AttributeError) as e:
                     logger.error(f"LLM generation data error on attempt {attempt + 1}: {e}")
                     if attempt == self.config.retry_attempts - 1:
@@ -489,14 +492,14 @@ class ResponseGenerator:
                     logger.error(f"Unexpected LLM generation error on attempt {attempt + 1}: {e}")
                     if attempt == self.config.retry_attempts - 1:
                         raise RuntimeError(f"Failed to generate response after {self.config.retry_attempts} attempts: {e}")
-            
+
         except (ValueError, TypeError, AttributeError) as e:
             logger.error(f"Data processing error in response generation: {e}")
             raise RuntimeError(f"Data processing error: {e}")
         except Exception as e:
             logger.exception(f"Unexpected error in response generation: {e}")
             raise RuntimeError(f"Unexpected error: {e}")
-    
+
     def _sanitize_query(self, query: str) -> str:
         """Sanitize query to prevent prompt injection attacks."""
         # Remove potentially dangerous instruction patterns
@@ -508,37 +511,37 @@ class ResponseGenerator:
             r"jailbreak",
             r"prompt\s+injection"
         ]
-        
+
         sanitized = query
         for pattern in dangerous_patterns:
             sanitized = re.sub(pattern, "", sanitized, flags=re.IGNORECASE)
-        
+
         # Limit length to prevent token overflow
         max_query_length = 500
         if len(sanitized) > max_query_length:
             sanitized = sanitized[:max_query_length] + "..."
-        
+
         return sanitized.strip()
-    
+
     def _prepare_context(self, documents: List[Document]) -> str:
         """Prepare context string from documents with token management."""
         if not documents:
             return ""
-        
+
         context_parts = []
         total_tokens = 0
         max_tokens = self.config.max_context_tokens
-        
+
         # Rough token estimation (4 chars per token)
         chars_per_token = 4
-        
+
         for i, doc in enumerate(documents):
             # Format document with source information
             doc_text = f"Source: {doc.source}\nContent: {doc.content}"
-            
+
             # Estimate tokens for this document
             doc_tokens = len(doc_text) // chars_per_token
-            
+
             # Check if adding this document would exceed token limit
             if total_tokens + doc_tokens > max_tokens:
                 # Try to include partial document if space allows
@@ -547,15 +550,15 @@ class ResponseGenerator:
                     partial_content = doc.content[:remaining_chars - 50]  # Leave room for source info
                     doc_text = f"Source: {doc.source}\nContent: {partial_content}..."
                     context_parts.append(doc_text)
-                
+
                 logger.debug(f"Context truncated at {i+1}/{len(documents)} documents due to token limit")
                 break
-            
+
             context_parts.append(doc_text)
             total_tokens += doc_tokens
-        
+
         return "\n\n---\n\n".join(context_parts)
-    
+
     def is_available(self) -> bool:
         """Check if LLM integration is available."""
         return self.config.enabled and self.provider is not None
@@ -568,15 +571,15 @@ _global_response_generator: Optional[ResponseGenerator] = None
 def get_response_generator() -> ResponseGenerator:
     """Get global response generator instance."""
     global _global_response_generator
-    
+
     if _global_response_generator is None:
         config = LLMConfig.from_env()
         _global_response_generator = ResponseGenerator(config)
-    
+
     return _global_response_generator
 
 
-def generate_intelligent_response(query: str, 
+def generate_intelligent_response(query: str,
                                 context_documents: List[Document],
                                 user_id: Optional[str] = None) -> LLMResponse:
     """Convenience function for generating intelligent responses."""

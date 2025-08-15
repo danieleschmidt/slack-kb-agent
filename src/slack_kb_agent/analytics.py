@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-import json
 from typing import List, Tuple
 
 
@@ -58,7 +58,7 @@ class UsageAnalytics:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, dict[str, int]]) -> "UsageAnalytics":
+    def from_dict(cls, data: dict[str, dict[str, int]]) -> UsageAnalytics:
         """Create a :class:`UsageAnalytics` instance from a dictionary."""
         ua = cls()
         ua.counts.update(data.get("counts", {}))
@@ -71,7 +71,7 @@ class UsageAnalytics:
         Path(path).write_text(json.dumps(self.to_dict()), encoding="utf-8")
 
     @classmethod
-    def load(cls, path: str | Path) -> "UsageAnalytics":
+    def load(cls, path: str | Path) -> UsageAnalytics:
         """Load analytics data from ``path`` returning a new instance."""
         try:
             text = Path(path).read_text(encoding="utf-8")
