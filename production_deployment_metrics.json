@@ -1,0 +1,44 @@
+{
+  "environment": "production",
+  "collection_period": {
+    "start": "2025-08-21T01:01:28.366595",
+    "end": "2025-08-21T01:01:59.373585"
+  },
+  "total_metrics": 2,
+  "metrics": [
+    {
+      "timestamp": "2025-08-21T01:01:28.366595",
+      "health_metrics": {
+        "cpu_usage": 1.0,
+        "memory_usage": 14.8,
+        "response_time": 107.4,
+        "health_status": "healthy"
+      },
+      "scaling_metrics": {
+        "current_capacity": 0.8,
+        "scaling_action": "scale_down"
+      },
+      "security_metrics": {
+        "blocked_ips": 0,
+        "security_incidents": 0
+      }
+    },
+    {
+      "timestamp": "2025-08-21T01:01:59.373585",
+      "health_metrics": {
+        "cpu_usage": 0.5,
+        "memory_usage": 14.8,
+        "response_time": 107.4,
+        "health_status": "healthy"
+      },
+      "scaling_metrics": {
+        "current_capacity": 0.8,
+        "scaling_action": "none"
+      },
+      "security_metrics": {
+        "blocked_ips": 0,
+        "security_incidents": 0
+      }
+    }
+  ]
+}
