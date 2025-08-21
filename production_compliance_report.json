@@ -1,0 +1,30 @@
+{
+  "report_timestamp": "2025-08-21T01:02:26.372981",
+  "active_frameworks": [
+    "GDPR",
+    "CCPA"
+  ],
+  "framework_status": {
+    "GDPR": {
+      "status": "active",
+      "requirements": 4,
+      "last_audit": "2025-08-21T01:02:26.372997"
+    },
+    "CCPA": {
+      "status": "active",
+      "requirements": 4,
+      "last_audit": "2025-08-21T01:02:26.373000"
+    }
+  },
+  "violation_summary": {
+    "total_violations": 0,
+    "violations_by_framework": {},
+    "recent_violations": []
+  },
+  "recommendations": [
+    "Implement automated compliance checking in data pipelines",
+    "Regular compliance audits and staff training",
+    "Automated data retention and deletion policies",
+    "Enhanced consent management systems"
+  ]
+}
