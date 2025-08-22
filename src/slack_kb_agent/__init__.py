@@ -81,6 +81,46 @@ from .validation import (
 )
 from .vector_search import VectorSearchEngine, is_vector_search_available
 
+# Revolutionary Generation 5: Transcendent Intelligence Modules
+from .transcendent_agi_consciousness import (
+    TranscendentAGIConsciousness,
+    ConsciousnessLevel,
+    ConsciousnessMetrics,
+    NovelInsight,
+    get_transcendent_consciousness,
+    evolve_consciousness_continuously,
+)
+from .autonomous_research_evolution_system import (
+    AutonomousResearchEvolutionSystem,
+    ResearchHypothesis,
+    ExperimentalDesign,
+    ResearchDiscovery,
+    ResearchPhase,
+    DiscoveryType,
+    ResearchQuality,
+    get_autonomous_research_system,
+    run_autonomous_research_continuously,
+)
+from .timeline_aware_knowledge_processor import (
+    TimelineAwareKnowledgeProcessor,
+    TemporalKnowledgeNode,
+    CausalityChain,
+    TemporalRelationType,
+    TimelineScale,
+    get_timeline_processor,
+    process_timeline_continuously,
+)
+from .self_evolving_consciousness_deployment import (
+    SelfEvolvingConsciousnessDeployment,
+    ConsciousnessNode,
+    ConsciousnessCluster,
+    ConsciousnessDeploymentMode,
+    ConsciousnessScaleLevel,
+    EvolutionStrategy,
+    get_consciousness_deployment_system,
+    run_consciousness_deployment_continuously,
+)
+
 __all__ = [
     "add",
     "Document",
@@ -161,4 +201,35 @@ __all__ = [
     "get_bulkhead",
     "get_health_monitor",
     "cli",
+    # Revolutionary Generation 5: Transcendent Intelligence
+    "TranscendentAGIConsciousness",
+    "ConsciousnessLevel",
+    "ConsciousnessMetrics",
+    "NovelInsight",
+    "get_transcendent_consciousness",
+    "evolve_consciousness_continuously",
+    "AutonomousResearchEvolutionSystem",
+    "ResearchHypothesis",
+    "ExperimentalDesign",
+    "ResearchDiscovery",
+    "ResearchPhase",
+    "DiscoveryType",
+    "ResearchQuality",
+    "get_autonomous_research_system",
+    "run_autonomous_research_continuously",
+    "TimelineAwareKnowledgeProcessor",
+    "TemporalKnowledgeNode",
+    "CausalityChain",
+    "TemporalRelationType",
+    "TimelineScale",
+    "get_timeline_processor",
+    "process_timeline_continuously",
+    "SelfEvolvingConsciousnessDeployment",
+    "ConsciousnessNode",
+    "ConsciousnessCluster",
+    "ConsciousnessDeploymentMode",
+    "ConsciousnessScaleLevel",
+    "EvolutionStrategy",
+    "get_consciousness_deployment_system",
+    "run_consciousness_deployment_continuously",
 ]
