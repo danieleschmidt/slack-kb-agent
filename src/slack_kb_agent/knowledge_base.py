@@ -102,7 +102,8 @@ class KnowledgeBase:
         # Add to search engine
         self.search_engine.add_documents(documents)
 
-        self._rebuild_vector_index()
+        # Performance optimization: Pass new documents for incremental indexing
+        self._rebuild_vector_index(new_documents=documents)
 
         # Invalidate search cache when documents are added
         cache_manager = get_cache_manager()
@@ -110,9 +111,23 @@ class KnowledgeBase:
         if invalidated > 0:
             logger.debug(f"Invalidated {invalidated} search cache entries after adding {len(documents)} documents")
 
-    def _rebuild_vector_index(self) -> None:
-        """Rebuild the vector search index with current documents."""
+    def _rebuild_vector_index(self, new_documents: Optional[List[Document]] = None) -> None:
+        """Rebuild or incrementally update the vector search index.
+        
+        Args:
+            new_documents: If provided, attempt incremental update instead of full rebuild
+        """
         if self.enable_vector_search and self.vector_engine and self.documents:
+            # Performance optimization: Try incremental updates first
+            if new_documents and hasattr(self.vector_engine, 'add_documents_incremental'):
+                try:
+                    self.vector_engine.add_documents_incremental(new_documents)
+                    return
+                except (AttributeError, NotImplementedError):
+                    # Fall back to full rebuild if incremental not supported
+                    pass
+            
+            # Full rebuild as fallback
             self.vector_engine.build_index(self.documents)
 
     def search(self, query: str) -> List[Document]:
@@ -199,6 +214,71 @@ class KnowledgeBase:
         # Sort by combined score and return top_k
         sorted_results = sorted(doc_scores.values(), key=lambda x: x[1], reverse=True)
         return [doc for doc, score in sorted_results[:top_k]]
+
+    def search_with_consciousness(self, query: str, use_consciousness: bool = True, top_k: int = 10) -> List[Document]:
+        """Search with consciousness-enhanced ranking.
+        
+        This method integrates the transcendent AGI consciousness system to provide
+        enhanced knowledge retrieval with consciousness-guided insights.
+        
+        Args:
+            query: Search query
+            use_consciousness: Whether to use consciousness enhancement
+            top_k: Maximum results to return
+            
+        Returns:
+            List of documents enhanced by consciousness insights
+        """
+        # Get base search results using hybrid search
+        base_results = self.search_hybrid(query, top_k=top_k * 2)  # Get more candidates
+        
+        if not use_consciousness or not base_results:
+            return base_results[:top_k]
+        
+        try:
+            # Import consciousness system (lazy import to avoid circular dependencies)
+            from .transcendent_agi_consciousness import get_transcendent_consciousness
+            
+            consciousness = get_transcendent_consciousness()
+            
+            # Use consciousness to enhance knowledge processing
+            enhanced_context = {
+                'query': query,
+                'documents': [{'content': doc.content, 'source': doc.source} for doc in base_results],
+                'search_type': 'knowledge_retrieval'
+            }
+            
+            # Get consciousness insights (async call wrapped)
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+            consciousness_result = loop.run_until_complete(
+                consciousness.process_knowledge_with_consciousness(query, enhanced_context)
+            )
+            
+            # Apply consciousness-driven re-ranking
+            consciousness_weights = consciousness_result.get('relevance_weights', [1.0] * len(base_results))
+            consciousness_insights = consciousness_result.get('insights', [])
+            
+            # Re-rank results based on consciousness analysis
+            enhanced_results = []
+            for i, doc in enumerate(base_results):
+                weight = consciousness_weights[i] if i < len(consciousness_weights) else 1.0
+                enhanced_results.append((doc, weight))
+            
+            # Sort by consciousness-enhanced scores
+            enhanced_results.sort(key=lambda x: x[1], reverse=True)
+            
+            logger.info(f"Consciousness enhancement applied. Generated {len(consciousness_insights)} insights")
+            return [doc for doc, _ in enhanced_results[:top_k]]
+            
+        except Exception as e:
+            logger.warning(f"Consciousness enhancement failed, falling back to hybrid search: {e}")
+            return base_results[:top_k]
 
     def _generate_embedding(self, text: str):
         """Generate embedding for text (for testing purposes)."""

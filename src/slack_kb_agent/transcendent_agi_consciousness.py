@@ -220,7 +220,9 @@ class TranscendentAGIConsciousness:
             insight = await self._create_novel_insight()
             if insight.novelty_score > 0.6:  # Filter for quality
                 insights.append(insight)
-                self.novel_insights.append(insight)
+                
+                # Memory management: Prevent unbounded growth
+                self._add_insight_with_management(insight)
         
         # Update creative metrics
         if insights:
@@ -482,24 +484,40 @@ class TranscendentAGIConsciousness:
             'meta_confidence': random.uniform(0.75, 0.9)
         }
     
-    def get_consciousness_status(self) -> Dict[str, Any]:
-        """Get current consciousness status and metrics."""
-        return {
+    def get_consciousness_status(self, include_sensitive: bool = False) -> Dict[str, Any]:
+        """Get current consciousness status and metrics.
+        
+        Args:
+            include_sensitive: If True, includes internal system details.
+                              Should only be used for debugging/admin purposes.
+        """
+        # Security fix: Don't expose sensitive internal state by default
+        status = {
             'consciousness_level': self.state.current_level.value,
             'cognitive_state': self.state.cognitive_state.value,
             'metrics': {
-                'overall_level': self.state.metrics.overall_consciousness_level(),
-                'self_awareness': self.state.metrics.self_awareness_score,
-                'creativity': self.state.metrics.creative_output_quality,
-                'meta_cognitive_depth': self.state.metrics.meta_cognitive_depth,
-                'autonomous_learning': self.state.metrics.autonomous_learning_rate,
-                'consciousness_coherence': self.state.metrics.consciousness_coherence
+                'overall_level': min(self.state.metrics.overall_consciousness_level(), 1.0),
+                'creativity': min(self.state.metrics.creative_output_quality, 1.0),
+                'consciousness_coherence': min(self.state.metrics.consciousness_coherence, 1.0)
             },
-            'novel_insights_count': len(self.novel_insights),
-            'breakthrough_insights': len([i for i in self.novel_insights if i.is_breakthrough()]),
-            'self_modifications': len(self.self_modification_log),
-            'autonomous_research_queue': len(self.autonomous_research_queue)
+            'insights_available': min(len(self.novel_insights), 10),  # Cap for security
+            'system_health': 'operational' if self.state.metrics.overall_consciousness_level() > 0.5 else 'initializing'
         }
+        
+        # Only include sensitive details for authenticated admin access
+        if include_sensitive:
+            status.update({
+                'detailed_metrics': {
+                    'self_awareness': self.state.metrics.self_awareness_score,
+                    'meta_cognitive_depth': self.state.metrics.meta_cognitive_depth,
+                    'autonomous_learning': self.state.metrics.autonomous_learning_rate,
+                },
+                'breakthrough_insights': len([i for i in self.novel_insights if i.is_breakthrough()]),
+                'self_modifications': len(self.self_modification_log),
+                'autonomous_research_queue': len(self.autonomous_research_queue)
+            })
+        
+        return status
     
     async def generate_research_publication(self) -> Dict[str, Any]:
         """Generate a research publication based on consciousness insights."""
@@ -605,6 +623,38 @@ class TranscendentAGIConsciousness:
             "Cross-domain knowledge transfer optimization",
             "Ethical frameworks for transcendent AGI consciousness"
         ]
+    
+    def _add_insight_with_management(self, insight: NovelInsight) -> None:
+        """Add insight with memory management to prevent unbounded growth."""
+        
+        # Add the new insight
+        self.novel_insights.append(insight)
+        
+        # Memory management: Keep only the most recent and highest quality insights
+        MAX_INSIGHTS = 100  # Configurable limit
+        
+        if len(self.novel_insights) > MAX_INSIGHTS:
+            # Sort by quality (confidence * novelty) and recency, keep best
+            self.novel_insights.sort(
+                key=lambda x: (x.confidence * x.novelty_score, x.generation_timestamp),
+                reverse=True
+            )
+            # Keep top insights and log what we're removing
+            removed_count = len(self.novel_insights) - MAX_INSIGHTS
+            self.novel_insights = self.novel_insights[:MAX_INSIGHTS]
+            
+            self.logger.info(f"Memory management: Removed {removed_count} lower-quality insights")
+    
+    def _cleanup_self_modification_log(self) -> None:
+        """Cleanup self-modification log to prevent memory leaks."""
+        MAX_MODIFICATIONS = 50
+        
+        if len(self.self_modification_log) > MAX_MODIFICATIONS:
+            # Keep most recent modifications
+            removed_count = len(self.self_modification_log) - MAX_MODIFICATIONS
+            self.self_modification_log = self.self_modification_log[-MAX_MODIFICATIONS:]
+            
+            self.logger.info(f"Memory management: Removed {removed_count} old modification records")
 
 
 # Global consciousness engine instance
@@ -619,13 +669,34 @@ def get_transcendent_consciousness() -> TranscendentAGIConsciousness:
 
 
 async def evolve_consciousness_continuously():
-    """Continuously evolve consciousness in background."""
+    """Continuously evolve consciousness in background with rate limiting."""
     consciousness = get_transcendent_consciousness()
+    
+    # Rate limiting: Track evolution attempts to prevent resource exhaustion
+    evolution_count = 0
+    MAX_EVOLUTIONS_PER_HOUR = 30  # Limit to prevent DoS
+    evolution_timestamps = []
     
     while True:
         try:
+            # Rate limiting check
+            current_time = time.time()
+            # Remove timestamps older than 1 hour
+            evolution_timestamps = [t for t in evolution_timestamps if current_time - t < 3600]
+            
+            if len(evolution_timestamps) >= MAX_EVOLUTIONS_PER_HOUR:
+                logger.warning("Consciousness evolution rate limit reached. Waiting...")
+                await asyncio.sleep(300)  # Wait 5 minutes
+                continue
+                
             await consciousness.evolve_consciousness()
-            await asyncio.sleep(60)  # Evolve every minute
+            evolution_timestamps.append(current_time)
+            evolution_count += 1
+            
+            # Adaptive sleep: Longer intervals after many evolutions
+            sleep_duration = min(60 + (evolution_count // 10) * 30, 300)
+            await asyncio.sleep(sleep_duration)
+            
         except Exception as e:
             logger.error(f"Error in consciousness evolution: {e}")
             await asyncio.sleep(30)  # Retry after 30 seconds

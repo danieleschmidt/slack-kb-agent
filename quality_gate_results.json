@@ -1,29 +1,29 @@
 {
-  "timestamp": "2025-08-05 05:46:23",
-  "execution_time": 0.06402063369750977,
+  "timestamp": "2025-08-24 21:32:40",
+  "execution_time": 0.03311586380004883,
   "total_gates": 7,
-  "passed_gates": 7,
-  "success_rate": 100.0,
-  "overall_status": "PASSED",
+  "passed_gates": 4,
+  "success_rate": 57.14285714285714,
+  "overall_status": "FAILED",
   "gate_results": {
     "Import Validation": {
-      "passed": true,
+      "passed": false,
       "results": {
         "slack_kb_agent.quantum_task_planner": {
-          "status": "passed",
-          "error": null
+          "status": "failed",
+          "error": "No module named 'numpy'"
         },
         "slack_kb_agent.autonomous_sdlc": {
-          "status": "passed",
-          "error": null
+          "status": "failed",
+          "error": "No module named 'numpy'"
         },
         "slack_kb_agent.resilience": {
-          "status": "passed",
-          "error": null
+          "status": "failed",
+          "error": "No module named 'numpy'"
         },
         "slack_kb_agent.performance_optimizer": {
-          "status": "passed",
-          "error": null
+          "status": "failed",
+          "error": "No module named 'numpy'"
         }
       }
     },
@@ -32,11 +32,11 @@
       "results": {
         "src/slack_kb_agent/quantum_task_planner.py": {
           "status": "passed",
-          "lines": 483
+          "lines": 481
         },
         "src/slack_kb_agent/autonomous_sdlc.py": {
           "status": "passed",
-          "lines": 738
+          "lines": 740
         },
         "src/slack_kb_agent/resilience.py": {
           "status": "passed",
@@ -49,7 +49,7 @@
       }
     },
     "Basic Functionality": {
-      "passed": true,
+      "passed": false,
       "results": {
         "quantum_task_planner": {
           "status": "passed",
@@ -60,11 +60,8 @@
           ]
         },
         "autonomous_sdlc": {
-          "status": "passed",
-          "tests": [
-            "initialization",
-            "project_analysis"
-          ]
+          "status": "failed",
+          "error": "REDIS_HOST environment variable is required when caching is enabled. Set CACHE_ENABLED=false to disable caching or provide REDIS_HOST."
         },
         "resilience": {
           "status": "passed",
@@ -74,11 +71,8 @@
           ]
         },
         "performance_optimizer": {
-          "status": "passed",
-          "tests": [
-            "metrics_creation",
-            "dict_conversion"
-          ]
+          "status": "failed",
+          "error": "No module named 'numpy'"
         }
       }
     },
@@ -104,23 +98,23 @@
       "results": {
         "src/slack_kb_agent/__init__.py": {
           "status": "exists",
-          "lines": 138
+          "lines": 235
         },
         "src/slack_kb_agent/quantum_task_planner.py": {
           "status": "exists",
-          "lines": 483
+          "lines": 480
         },
         "src/slack_kb_agent/autonomous_sdlc.py": {
           "status": "exists",
-          "lines": 738
+          "lines": 739
         },
         "src/slack_kb_agent/resilience.py": {
           "status": "exists",
-          "lines": 686
+          "lines": 685
         },
         "src/slack_kb_agent/performance_optimizer.py": {
           "status": "exists",
-          "lines": 597
+          "lines": 596
         },
         "tests/test_quantum_task_planner.py": {
           "status": "exists",
@@ -135,19 +129,21 @@
           "lines": 180
         },
         "summary": {
-          "total_lines": 3856,
+          "total_lines": 3949,
           "files_checked": 8
         }
       }
     },
     "Integration Validation": {
-      "passed": true,
+      "passed": false,
       "results": {
         "sdlc_planner_integration": {
-          "status": "passed"
+          "status": "failed",
+          "error": "REDIS_HOST environment variable is required when caching is enabled. Set CACHE_ENABLED=false to disable caching or provide REDIS_HOST."
         },
         "package_imports": {
-          "status": "passed"
+          "status": "failed",
+          "error": "No module named 'numpy'"
         }
       }
     },

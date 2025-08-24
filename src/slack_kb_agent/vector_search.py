@@ -227,6 +227,48 @@ class VectorSearchEngine:
         """Get the embedding dimension of the current model."""
         self._ensure_model_loaded()
         return self.model.get_sentence_embedding_dimension()
+    
+    def add_documents_incremental(self, new_documents: List[Document]) -> None:
+        """Add documents incrementally without full rebuild.
+        
+        Args:
+            new_documents: New documents to add to the index
+        """
+        if not new_documents:
+            return
+            
+        logger.info(f"Incrementally adding {len(new_documents)} documents to vector index")
+        
+        # Add documents to our list
+        self.documents.extend(new_documents)
+        
+        # Generate embeddings for new documents only
+        texts = [doc.content for doc in new_documents]
+        self._ensure_model_loaded()
+        
+        config = get_vector_search_config()
+        batch_size = config.batch_size
+        new_embeddings = []
+        
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+            batch_embeddings = self.model.encode(batch, normalize_embeddings=True)
+            new_embeddings.extend(batch_embeddings)
+        
+        new_embeddings_array = np.array(new_embeddings, dtype=np.float32)
+        
+        # If we don't have an existing index, create one
+        if self.index is None or self._embeddings is None:
+            self.build_index(self.documents)
+            return
+        
+        # Add new embeddings to existing index
+        self.index.add(new_embeddings_array)
+        
+        # Update stored embeddings
+        self._embeddings = np.vstack([self._embeddings, new_embeddings_array])
+        
+        logger.info(f"Incremental index update complete. Total documents: {self.index.ntotal}")
 
 
 def is_vector_search_available() -> bool:
