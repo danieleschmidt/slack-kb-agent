@@ -821,12 +821,20 @@ class AutonomousHypothesisGenerator:
     async def _create_hypothesis_from_gap(self, gap: str, domain: str) -> Optional[ResearchHypothesis]:
         """Create hypothesis targeting a specific knowledge gap."""
         
-        hypothesis_content = f"Novel approach to {gap} in {domain} domain through innovative methodology"
+        # Security fix: Sanitize inputs to prevent injection attacks
+        sanitized_gap = self._sanitize_research_content(gap)
+        sanitized_domain = self._sanitize_research_content(domain)
+        
+        if not sanitized_gap or not sanitized_domain:
+            self.logger.warning(f"Invalid research inputs detected: gap='{gap}', domain='{domain}'")
+            return None
+            
+        hypothesis_content = f"Novel approach to {sanitized_gap} in {sanitized_domain} domain through innovative methodology"
         
         hypothesis = ResearchHypothesis(
-            hypothesis_id=f"gap_hypothesis_{domain}_{int(time.time())}",
+            hypothesis_id=f"gap_hypothesis_{sanitized_domain}_{int(time.time())}",
             content=hypothesis_content,
-            domain=domain,
+            domain=sanitized_domain,
             confidence=random.uniform(0.6, 0.85),
             testability_score=random.uniform(0.7, 0.9),
             novelty_score=random.uniform(0.7, 0.95),
@@ -1186,6 +1194,27 @@ class AutonomousDiscoveryValidator:
             'theoretical_factors': theoretical_factors,
             'significance_level': theoretical_coherence * discovery.significance
         }
+    
+    def _sanitize_research_content(self, content: str) -> str:
+        """Sanitize research content to prevent injection attacks."""
+        import re
+        
+        if not content or not isinstance(content, str):
+            return ""
+            
+        # Remove potentially dangerous characters and patterns
+        sanitized = re.sub(r'[<>"\';{}()\\|&$`]', '', content)
+        
+        # Limit length to prevent abuse
+        sanitized = sanitized[:200]
+        
+        # Only allow alphanumeric, spaces, hyphens, and underscores
+        sanitized = re.sub(r'[^a-zA-Z0-9\s\-_]', '', sanitized)
+        
+        # Remove excessive whitespace
+        sanitized = re.sub(r'\s+', ' ', sanitized).strip()
+        
+        return sanitized
 
 
 class AutonomousPublicationEngine:
@@ -1516,16 +1545,71 @@ def get_autonomous_research_system() -> AutonomousResearchEvolutionSystem:
 
 
 async def run_autonomous_research_continuously():
-    """Run autonomous research cycles continuously in background."""
+    """Run autonomous research cycles continuously with rate limiting and async execution."""
     research_system = get_autonomous_research_system()
+    
+    # Rate limiting: Track research cycles to prevent resource exhaustion
+    cycle_count = 0
+    MAX_CYCLES_PER_DAY = 20  # Limit to prevent DoS
+    cycle_timestamps = []
+    
+    # Async execution queue for experiments
+    experiment_queue = asyncio.Queue(maxsize=10)
+    
+    # Start background experiment processor
+    asyncio.create_task(_process_experiment_queue(experiment_queue))
     
     while True:
         try:
-            await research_system.conduct_autonomous_research_cycle()
-            await asyncio.sleep(3600)  # Research cycle every hour
+            # Rate limiting check
+            current_time = time.time()
+            # Remove timestamps older than 24 hours
+            cycle_timestamps = [t for t in cycle_timestamps if current_time - t < 86400]
+            
+            if len(cycle_timestamps) >= MAX_CYCLES_PER_DAY:
+                logger.warning("Research cycle rate limit reached. Waiting...")
+                await asyncio.sleep(7200)  # Wait 2 hours
+                continue
+            
+            # Queue research cycle for async execution instead of blocking
+            if not experiment_queue.full():
+                await experiment_queue.put(('research_cycle', research_system, current_time))
+                cycle_timestamps.append(current_time)
+                cycle_count += 1
+                
+                # Adaptive sleep: Longer intervals after many cycles
+                sleep_duration = min(3600 + (cycle_count // 5) * 1800, 14400)  # Max 4 hours
+                await asyncio.sleep(sleep_duration)
+            else:
+                logger.warning("Experiment queue full, waiting for capacity...")
+                await asyncio.sleep(1800)  # Wait 30 minutes
+                
         except Exception as e:
             logger.error(f"Error in autonomous research cycle: {e}")
             await asyncio.sleep(1800)  # Retry after 30 minutes
+
+
+async def _process_experiment_queue(queue: asyncio.Queue):
+    """Process experiments asynchronously to prevent blocking."""
+    while True:
+        try:
+            # Get experiment from queue (wait up to 1 hour)
+            experiment_item = await asyncio.wait_for(queue.get(), timeout=3600)
+            experiment_type, system, timestamp = experiment_item
+            
+            if experiment_type == 'research_cycle':
+                # Execute research cycle asynchronously
+                await system.conduct_autonomous_research_cycle()
+                logger.info(f"Completed research cycle from {timestamp}")
+            
+            queue.task_done()
+            
+        except asyncio.TimeoutError:
+            # No experiments in queue, continue waiting
+            continue
+        except Exception as e:
+            logger.error(f"Error processing experiment queue: {e}")
+            await asyncio.sleep(60)  # Brief pause before retry
 
 
 # Export key components
