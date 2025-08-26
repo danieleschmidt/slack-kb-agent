@@ -1,17 +1,17 @@
 {
   "environment": "production",
   "collection_period": {
-    "start": "2025-08-21T01:01:28.366595",
-    "end": "2025-08-21T01:01:59.373585"
+    "start": "2025-08-26T04:46:15.198239",
+    "end": "2025-08-26T04:46:46.237466"
   },
   "total_metrics": 2,
   "metrics": [
     {
-      "timestamp": "2025-08-21T01:01:28.366595",
+      "timestamp": "2025-08-26T04:46:15.198239",
       "health_metrics": {
-        "cpu_usage": 1.0,
-        "memory_usage": 14.8,
-        "response_time": 107.4,
+        "cpu_usage": 0.5,
+        "memory_usage": 14.0,
+        "response_time": 107.0,
         "health_status": "healthy"
       },
       "scaling_metrics": {
@@ -24,11 +24,11 @@
       }
     },
     {
-      "timestamp": "2025-08-21T01:01:59.373585",
+      "timestamp": "2025-08-26T04:46:46.237466",
       "health_metrics": {
-        "cpu_usage": 0.5,
-        "memory_usage": 14.8,
-        "response_time": 107.4,
+        "cpu_usage": 1.0,
+        "memory_usage": 14.0,
+        "response_time": 107.0,
         "health_status": "healthy"
       },
       "scaling_metrics": {

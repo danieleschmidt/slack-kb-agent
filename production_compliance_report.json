@@ -1,5 +1,5 @@
 {
-  "report_timestamp": "2025-08-21T01:02:26.372981",
+  "report_timestamp": "2025-08-26T04:47:13.227971",
   "active_frameworks": [
     "GDPR",
     "CCPA"
@@ -8,12 +8,12 @@
     "GDPR": {
       "status": "active",
       "requirements": 4,
-      "last_audit": "2025-08-21T01:02:26.372997"
+      "last_audit": "2025-08-26T04:47:13.228005"
     },
     "CCPA": {
       "status": "active",
       "requirements": 4,
-      "last_audit": "2025-08-21T01:02:26.373000"
+      "last_audit": "2025-08-26T04:47:13.228011"
     }
   },
   "violation_summary": {
