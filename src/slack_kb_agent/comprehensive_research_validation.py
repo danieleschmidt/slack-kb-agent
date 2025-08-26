@@ -1416,7 +1416,7 @@ class StatisticalAnalyzer:
         
         if is_significant and effect_size >= 0.5:
             interpretation += "This represents a meaningful improvement with practical significance."
-        elif is_significant but effect_size < 0.5:
+        elif is_significant and effect_size < 0.5:
             interpretation += "While statistically significant, the practical impact may be limited."
         else:
             interpretation += "No strong evidence of a meaningful difference was found."
